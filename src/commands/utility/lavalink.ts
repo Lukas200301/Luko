@@ -1,9 +1,11 @@
 import {
   SlashCommandBuilder,
   ChatInputCommandInteraction,
-  EmbedBuilder
+  EmbedBuilder,
+  MessageFlags
 } from 'discord.js';
 import { SlashCommand } from '../../interfaces/Command';
+import { Constants } from 'shoukaku';
 
 export const command: SlashCommand = {
   data: new SlashCommandBuilder()
@@ -16,7 +18,7 @@ export const command: SlashCommand = {
     if (!shoukaku || shoukaku.nodes.size === 0) {
       await interaction.reply({
         content: '❌ No Lavalink nodes are configured or connected.',
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
       return;
     }
@@ -32,7 +34,7 @@ export const command: SlashCommand = {
     for (const [name, node] of shoukaku.nodes) {
       console.log(`Node ${name} state:`, node.state, 'Stats:', node.stats ? 'Available' : 'Not Available');
 
-      const isConnected = node.state === 2 || !!(node.stats && Object.keys(node.stats).length > 0);
+      const isConnected = node.state === Constants.State.CONNECTED;
       hasConnectedNode = hasConnectedNode || isConnected;
 
       const statusIcon = isConnected ? '🟢' : '🔴';

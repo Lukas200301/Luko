@@ -7,10 +7,10 @@ export const command: SlashCommand = {
     .setDescription('Check if Luko is online and get latency'),
   
   async execute(interaction: ChatInputCommandInteraction): Promise<void> {
-    await interaction.reply('🏓 Pinging...');
-    
-    const sent = await interaction.fetchReply();
-    const latency = sent.createdTimestamp - interaction.createdTimestamp;
+    const response = await interaction.reply({ content: '🏓 Pinging...', withResponse: true });
+
+    const sent = response.resource?.message;
+    const latency = (sent?.createdTimestamp ?? Date.now()) - interaction.createdTimestamp;
     
     await interaction.editReply(
       `🏓 **Luko is online!** | Latency: ${latency}ms`

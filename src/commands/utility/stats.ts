@@ -42,8 +42,7 @@ export const command: SlashCommand = {
     const apiLatency = client.ws.ping;
     const botLatency = responseTime;
     
-    const activeQueues = interaction.client.queueManager ? 
-      Array.from((interaction.client as any).queueManager['queues'].keys()).length : 0;
+    const activeQueues = interaction.client.queueManager?.size() ?? 0;
     
     const embed = new EmbedBuilder()
       .setColor(0x5865F2)

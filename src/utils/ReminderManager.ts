@@ -1,6 +1,5 @@
-import * as fs from 'fs';
-import * as path from 'path';
-import { Client, TextChannel, MessageFlags, EmbedBuilder } from 'discord.js';
+import { Client, EmbedBuilder } from 'discord.js';
+import { db } from './Database';
 
 export interface Reminder {
     id: string;
@@ -11,46 +10,44 @@ export interface Reminder {
     createdAt: number;
 }
 
+interface ReminderRow {
+    id: string;
+    user_id: string;
+    channel_id: string;
+    content: string;
+    due_at: number;
+    created_at: number;
+}
+
+function toReminder(row: ReminderRow): Reminder {
+    return {
+        id: row.id,
+        userId: row.user_id,
+        channelId: row.channel_id,
+        content: row.content,
+        dueAt: row.due_at,
+        createdAt: row.created_at
+    };
+}
+
+const statements = {
+    insert: db.prepare('INSERT INTO reminders (id, user_id, channel_id, content, due_at, created_at) VALUES (?, ?, ?, ?, ?, ?)'),
+    due: db.prepare('SELECT * FROM reminders WHERE due_at <= ? ORDER BY due_at'),
+    byUser: db.prepare('SELECT * FROM reminders WHERE user_id = ? ORDER BY due_at'),
+    all: db.prepare('SELECT * FROM reminders ORDER BY due_at'),
+    count: db.prepare('SELECT COUNT(*) AS n FROM reminders'),
+    deleteById: db.prepare('DELETE FROM reminders WHERE id = ?'),
+    deleteByIdAndUser: db.prepare('DELETE FROM reminders WHERE id = ? AND user_id = ?')
+};
+
 export class ReminderManager {
     private client: Client;
-    private reminders: Reminder[] = [];
-    private filePath: string;
     private interval: NodeJS.Timeout | null = null;
 
     constructor(client: Client) {
         this.client = client;
-        this.filePath = path.join(process.cwd(), 'data', 'reminders.json');
-
-        const dataDir = path.dirname(this.filePath);
-        if (!fs.existsSync(dataDir)) {
-            fs.mkdirSync(dataDir, { recursive: true });
-        }
-
-        this.loadReminders();
+        console.log(`📅 Loaded ${this.count()} reminders.`);
         this.startLoop();
-    }
-
-    private loadReminders(): void {
-        try {
-            if (fs.existsSync(this.filePath)) {
-                const data = fs.readFileSync(this.filePath, 'utf-8');
-                this.reminders = JSON.parse(data);
-                console.log(`📅 Loaded ${this.reminders.length} reminders.`);
-            } else {
-                this.saveReminders();
-            }
-        } catch (error) {
-            console.error('❌ Failed to load reminders:', error);
-            this.reminders = [];
-        }
-    }
-
-    private saveReminders(): void {
-        try {
-            fs.writeFileSync(this.filePath, JSON.stringify(this.reminders, null, 2));
-        } catch (error) {
-            console.error('❌ Failed to save reminders:', error);
-        }
     }
 
     private startLoop(): void {
@@ -60,28 +57,27 @@ export class ReminderManager {
     }
 
     private async checkReminders(): Promise<void> {
-        const now = Date.now();
-        const dueReminders = this.reminders.filter(r => r.dueAt <= now);
+        // Wait until the bot is connected, otherwise due reminders would be dropped.
+        if (!this.client.isReady()) return;
+
+        const dueReminders = (statements.due.all(Date.now()) as unknown as ReminderRow[]).map(toReminder);
 
         if (dueReminders.length === 0) return;
 
-        this.reminders = this.reminders.filter(r => r.dueAt > now);
-        this.saveReminders();
-
         for (const reminder of dueReminders) {
+            statements.deleteById.run(reminder.id);
+
             try {
                 const channel = await this.client.channels.fetch(reminder.channelId);
 
-                if (channel && channel.isTextBased() && 'send' in channel) {
+                if (channel?.isSendable()) {
                     const embed = new EmbedBuilder()
                         .setColor(0x00FF00)
                         .setTitle('⏰ Reminder!')
                         .setDescription(reminder.content)
-                        .addFields(
-                            { name: 'Time Set', value: `<t:${Math.floor(reminder.createdAt / 1000)}:R>`, inline: true }
-                        )
-                        .setFooter({ text: 'Luko Reminders' })
-                        .setTimestamp();
+                        // Discord shows the timestamp next to the footer in each reader's own time zone.
+                        .setFooter({ text: 'Reminder set' })
+                        .setTimestamp(reminder.createdAt);
 
                     await channel.send({
                         content: `<@${reminder.userId}>`,
@@ -105,25 +101,28 @@ export class ReminderManager {
             createdAt: now
         };
 
-        this.reminders.push(reminder);
-        this.saveReminders();
+        statements.insert.run(reminder.id, reminder.userId, reminder.channelId, reminder.content, reminder.dueAt, reminder.createdAt);
 
         return reminder;
     }
 
     public getReminders(userId: string): Reminder[] {
-        return this.reminders.filter(r => r.userId === userId).sort((a, b) => a.dueAt - b.dueAt);
+        return (statements.byUser.all(userId) as unknown as ReminderRow[]).map(toReminder);
+    }
+
+    public getAllReminders(): Reminder[] {
+        return (statements.all.all() as unknown as ReminderRow[]).map(toReminder);
+    }
+
+    public count(): number {
+        return (statements.count.get() as { n: number }).n;
+    }
+
+    public removeReminderById(id: string): boolean {
+        return Number(statements.deleteById.run(id).changes) > 0;
     }
 
     public removeReminder(id: string, userId: string): boolean {
-        const index = this.reminders.findIndex(r => r.id === id && r.userId === userId);
-
-        if (index !== -1) {
-            this.reminders.splice(index, 1);
-            this.saveReminders();
-            return true;
-        }
-
-        return false;
+        return Number(statements.deleteByIdAndUser.run(id, userId).changes) > 0;
     }
 }

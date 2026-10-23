@@ -5,6 +5,7 @@ import {
   MessageFlags
 } from 'discord.js';
 import { SlashCommand } from '../../interfaces/Command';
+import { destroyQueue } from '../../utils/MusicService';
 
 export const command: SlashCommand = {
   data: new SlashCommandBuilder()
@@ -42,10 +43,7 @@ export const command: SlashCommand = {
       return;
     }
     
-    queue.player.stopTrack();
-    interaction.client.shoukaku.leaveVoiceChannel(interaction.guildId!);
-    queue.clear();
-    interaction.client.queueManager.delete(interaction.guildId!);
+    await destroyQueue(interaction.client, interaction.guildId!);
     
     await interaction.reply('⏹️ Stopped the music and cleared the queue. See you later! 👋');
   }

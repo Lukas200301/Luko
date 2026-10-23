@@ -1,10 +1,13 @@
-import { 
-  SlashCommandBuilder, 
+import {
+  SlashCommandBuilder,
   ChatInputCommandInteraction,
   EmbedBuilder,
   ActionRowBuilder,
   ButtonBuilder,
-  ButtonStyle
+  ButtonStyle,
+  MessageFlags,
+  OAuth2Scopes,
+  PermissionFlagsBits
 } from 'discord.js';
 import { SlashCommand } from '../../interfaces/Command';
 
@@ -12,21 +15,22 @@ export const command: SlashCommand = {
   data: new SlashCommandBuilder()
     .setName('invite')
     .setDescription('Get the bot invite link'),
-  
+
   async execute(interaction: ChatInputCommandInteraction): Promise<void> {
-    // Bot permissions needed:
-    // - View Channels (1024)
-    // - Send Messages (2048)
-    // - Manage Messages (8192) - for auto-deleting responses
-    // - Embed Links (16384)
-    // - Connect (1048576)
-    // - Speak (2097152)
-    // - Use Application Commands (2147483648)
-    // Total: 2151557120
-    const permissions = '2151557120';
-    const clientId = interaction.client.user.id;
-    const inviteLink = `https://discord.com/api/oauth2/authorize?client_id=${clientId}&permissions=${permissions}&scope=bot%20applications.commands`;
-    
+    // Manage Messages is needed for auto-deleting responses
+    const inviteLink = interaction.client.generateInvite({
+      scopes: [OAuth2Scopes.Bot, OAuth2Scopes.ApplicationsCommands],
+      permissions: [
+        PermissionFlagsBits.ViewChannel,
+        PermissionFlagsBits.SendMessages,
+        PermissionFlagsBits.ManageMessages,
+        PermissionFlagsBits.EmbedLinks,
+        PermissionFlagsBits.Connect,
+        PermissionFlagsBits.Speak,
+        PermissionFlagsBits.UseApplicationCommands
+      ]
+    });
+
     const embed = new EmbedBuilder()
       .setColor(0x5865F2)
       .setTitle('🎵 Invite Luko to Your Server!')
@@ -44,19 +48,19 @@ export const command: SlashCommand = {
       .setThumbnail(interaction.client.user.displayAvatarURL())
       .setFooter({ text: 'Thanks for using Luko!' })
       .setTimestamp();
-    
+
     const button = new ButtonBuilder()
       .setLabel('Invite Bot')
       .setStyle(ButtonStyle.Link)
       .setURL(inviteLink)
       .setEmoji('🎵');
-    
+
     const row = new ActionRowBuilder<ButtonBuilder>().addComponents(button);
-    
-    await interaction.reply({ 
+
+    await interaction.reply({
       embeds: [embed],
       components: [row],
-      flags: require('discord.js').MessageFlags.Ephemeral
+      flags: MessageFlags.Ephemeral
     });
   }
 };

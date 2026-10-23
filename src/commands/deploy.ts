@@ -1,11 +1,10 @@
-import { 
-  SlashCommandBuilder, 
-  ChatInputCommandInteraction, 
-  MessageFlags,
-  REST,
-  Routes
+import {
+  SlashCommandBuilder,
+  ChatInputCommandInteraction,
+  MessageFlags
 } from 'discord.js';
 import { SlashCommand } from '../interfaces/Command';
+import { deployCommands, DeployTarget } from '../utils/CommandLoader';
 
 export const command: SlashCommand = {
   data: new SlashCommandBuilder()
@@ -22,9 +21,9 @@ export const command: SlashCommand = {
           { name: '🔄 Both Guild & Global', value: 'both' }
         )
     ),
-  
-  private: true, 
-  
+
+  private: true,
+
   async execute(interaction: ChatInputCommandInteraction): Promise<void> {
     if (interaction.user.id !== process.env.OWNER_ID) {
       await interaction.reply({
@@ -33,45 +32,29 @@ export const command: SlashCommand = {
       });
       return;
     }
-    
+
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-    
-    const target = interaction.options.getString('target', true);
-    
+
+    const target = interaction.options.getString('target', true) as DeployTarget;
+
     try {
-      const allCommands = Array.from(interaction.client.commands.values());
-      const publicCommands = allCommands.filter(cmd => !cmd.private).map(cmd => cmd.data.toJSON());
-      const privateCommands = allCommands.filter(cmd => cmd.private).map(cmd => cmd.data.toJSON());
-      
-      const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN!);
-      
+      const result = await deployCommands(interaction.client, target);
+
       let message = '';
-      
-      if (target === 'guild' || target === 'both') {
-        const guildCommands = [...publicCommands, ...privateCommands];
-        
-        await rest.put(
-          Routes.applicationGuildCommands(process.env.CLIENT_ID!, process.env.DEV_GUILD_ID!),
-          { body: guildCommands }
-        );
-        
-        message += `✅ Deployed ${guildCommands.length} command(s) to **Dev Guild** (instant)\n`;
+
+      if (result.guild !== undefined) {
+        message += `✅ Deployed ${result.guild} command(s) to **Dev Guild** (instant)\n`;
       }
-      
-      if (target === 'global' || target === 'both') {
-        await rest.put(
-          Routes.applicationCommands(process.env.CLIENT_ID!),
-          { body: publicCommands }
-        );
-        
-        message += `✅ Deployed ${publicCommands.length} public command(s) **Globally** (may take up to 1 hour)\n`;
+
+      if (result.global !== undefined) {
+        message += `✅ Deployed ${result.global} public command(s) **Globally** (may take up to 1 hour)\n`;
       }
-      
+
       message += `\n📊 **Summary:**\n`;
-      message += `• Public commands: ${publicCommands.length}\n`;
-      message += `• Private commands: ${privateCommands.length}\n`;
-      message += `• Total: ${allCommands.length}`;
-      
+      message += `• Public commands: ${result.publicCount}\n`;
+      message += `• Private commands: ${result.privateCount}\n`;
+      message += `• Total: ${result.publicCount + result.privateCount}`;
+
       await interaction.editReply(message);
     } catch (error) {
       console.error('❌ Error deploying commands:', error);

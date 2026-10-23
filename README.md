@@ -13,20 +13,12 @@ A feature-rich Discord music bot built with TypeScript, Discord.js v14, and Lava
 - **Volume control** and track skipping
 - **Auto-delete responses** - Music command responses are deleted after 30 seconds for cleaner channels
 
-### 📅 Special Commands
-- **Song of the Day** - Discover music from history with extensive genre selection
-  - 7 main genres (Rock, Pop, Electronic, Hip-Hop, Jazz, Metal, Classical)
-  - 8 sub-genres per main genre (56 total sub-genres!)
-  - "Surprise Me" random selection
-  - MusicBrainz database integration
-
 ### 🎧 Music Commands
 - `/play <query>` - Play a song or add it to the queue
 - `/skip` - Skip the current track
 - `/stop` - Stop playback and clear the queue
 - `/queue` - View the current queue
 - `/loop <mode>` - Set loop mode (off/track/queue)
-- `/songoftheday` - Discover and play a song from music history
 
 ### 🔧 Utility Commands
 - `/ping` - Check bot latency
@@ -41,6 +33,8 @@ A feature-rich Discord music bot built with TypeScript, Discord.js v14, and Lava
 - **Shoukaku v4** - Lavalink client for audio
 - **Lavalink** - High-performance audio server
 - **Node.js** - JavaScript runtime
+- **Fastify** - Web server for the admin panel (runs inside the bot process)
+- **React + Vite + Tailwind CSS** - Admin panel frontend
 
 ## Architecture
 
@@ -56,18 +50,22 @@ src/
 │       ├── skip.ts
 │       ├── stop.ts
 │       ├── queue.ts
-│       ├── loop.ts
-│       └── songoftheday.ts
+│       └── loop.ts
 ├── interfaces/
 │   └── Command.ts        # Command interface
+├── panel/                # Admin panel backend (Fastify API, auth, live events)
+├── shared/types.ts       # Types shared by the bot and the panel
 └── utils/
-    └── QueueManager.ts   # Queue management system
+    ├── QueueManager.ts   # Queue management system
+    ├── MusicService.ts   # Shared playback logic (commands + panel)
+    └── SettingsManager.ts# data/settings.json
+panel/                    # Admin panel frontend (React + Vite)
 ```
 
 ## Setup
 
 ### Prerequisites
-- Node.js 18+ 
+- Node.js 22.12+ 
 - npm or yarn
 - A Discord Bot Token
 - A Lavalink server
@@ -85,31 +83,103 @@ cd luko
 npm install
 ```
 
-3. Create a `.env` file in the root directory:
+3. Copy `.env.example` to `.env` and fill in the secrets:
 ```env
-TOKEN=your_discord_bot_token
+DISCORD_TOKEN=your_discord_bot_token
 CLIENT_ID=your_bot_client_id
-GUILD_ID=your_test_guild_id
-LAVALINK_HOST=127.0.0.1
-LAVALINK_PORT=2333
+DEV_GUILD_ID=your_test_guild_id
+OWNER_ID=your_discord_user_id
 LAVALINK_PASSWORD=youshallnotpass
+DISCORD_CLIENT_SECRET=   # for "Continue with Discord" in the admin panel
+PANEL_PASSWORD=          # optional password login for the admin panel
 ```
+   Everything else (settings, reminders, pinboard posts, command stats, panel logins and the audit log)
+   lives in an SQLite database at `data/luko.db`, using Node's built-in `node:sqlite`. Settings are
+   changed in the admin panel. Older JSON files in `data/` (including `settings.json`) are imported
+   automatically on the first start and kept as `*.json.migrated`.
 
-4. Set up Lavalink:
-   - Download [Lavalink.jar](https://github.com/lavalink-devs/Lavalink/releases)
-   - Configure `application.yml` (see [MUSIC_SETUP.md](MUSIC_SETUP.md))
-   - Run Lavalink: `java -jar Lavalink.jar`
+4. Set up Lavalink (needs Java 17+). The setup script downloads the latest Lavalink and the
+   YouTube plugin, writes `application.yml` with the password from your `.env`, and runs it with pm2:
+   - Windows: `powershell -ExecutionPolicy Bypass -File scripts/setup-lavalink.ps1`
+   - Linux/macOS: `bash scripts/setup-lavalink.sh`
 
-5. Build and run the bot:
+   Run it again any time to update Lavalink. See [MUSIC_SETUP.md](MUSIC_SETUP.md) for options.
+
+5. Build and run the bot (this also builds the admin panel):
 ```bash
 npm run build
 npm start
 ```
 
-For development with auto-reload:
+For development, run straight from the TypeScript source:
 ```bash
 npm run dev
 ```
+
+## Admin Panel
+
+Luko comes with a web admin panel that runs inside the bot on port **5000**. It has:
+
+- **Dashboard** - live status, uptime, ping, memory/CPU charts, Lavalink health, recent errors
+- **Music** - live player for every server: pause, skip, seek, volume, loop, filters, autoplay, drag-and-drop queue, search and add songs, start a session from the browser
+- **Pinboard** - any number of pinboards across servers, each with its own channel, emojis, reactions needed (per board and per emoji), ignored channels and options; browse and remove pinned messages
+- **Emojis** - upload, rename and delete the bot's own (application) emojis, usable in every server
+- **Reminders** - see, create and delete all reminders, picking the user from the server's member list
+- **Servers** - server details, channels, roles, emojis, bot permissions, bot nickname, per-server command toggles, leave server
+- **Commands** - enable/disable commands (disabled ones are removed from Discord's / menu automatically), usage counts, deploy, reload from disk
+- **Messages** - send messages and embeds as the bot, with a live preview
+- **Presence** - online status, rotating activities with placeholders, maintenance mode
+- **Lavalink** - live stats, connection settings, YouTube playback test and sign-in, and for a local install: start/stop/restart, update, config editor and log
+- **Logs & Activity** - live console, command usage history, audit log of panel changes
+- **Settings** - feature toggles, music settings, member list, admin list, web access, restart (pm2)
+
+### Who can log in
+Only the owner (`OWNER_ID`) and the admins you add in **Settings → Panel access**. Two login methods:
+- **Discord** - set `DISCORD_CLIENT_SECRET` and add the redirect URL shown on the login page
+  (`http://<server-ip>:5000/auth/callback` or `https://your-domain/auth/callback`) in the
+  Discord Developer Portal under *OAuth2 → Redirects*.
+- **Password** - set `PANEL_PASSWORD`. This signs you in as the owner.
+
+### Local network mode (default)
+With no domain configured, the panel is reachable at `http://<server-ip>:5000` from devices on the
+same network only; requests from outside the local network are blocked. The login page and the
+sidebar show a notice about this, and the bot prints the URLs on startup.
+
+### Using a domain
+Set **Public URL** in *Settings → Panel access* (or `panel.publicUrl` in `data/settings.json`),
+restart the bot, and put a reverse proxy with HTTPS in front of port 5000. Example with Caddy:
+```
+panel.example.com {
+    reverse_proxy localhost:5000
+}
+```
+
+### Locked out?
+If a wrong domain or port setting keeps you out of the panel, run `npm run panel:reset` on the server
+and restart the bot. It switches the panel back to local network mode on port 5000 (the admin list stays).
+
+### Full member list
+Picking users (for reminders) works by name search out of the box. To list every member of a server,
+enable **Server Members Intent** in the Discord Developer Portal (your app → Bot), then turn on
+**Full member list** in *Settings* and restart the bot.
+
+### Panel development
+`npm run dev:panel` starts Vite with hot reload on port 5173 and forwards API calls to the bot on port 5000.
+
+## Upgrading from an older version
+
+Older versions stored their data as JSON files in `data/` (`reminders.json`, `pinboard.json`, `settings.json`, …).
+You don't need to convert anything by hand:
+
+1. Stop the bot and **make a copy of the `data/` folder**. `data/reminders.json` used to be part of the repository,
+   so `git pull` deletes it; copy it back into `data/` after pulling.
+2. Pull the new code and run `npm install` and `npm run build`.
+3. Start the bot as usual. On the first start it imports every JSON file it finds in `data/` into `data/luko.db`
+   and renames the files to `*.json.migrated` as a backup. The log says what was imported.
+4. Check the panel (Pinboard, Reminders, Settings). Once everything is there, you can delete the `*.json.migrated` files.
+
+The import only runs once. If something went wrong, stop the bot, delete `data/luko.db` (and `luko.db-wal` / `luko.db-shm`),
+rename the `*.json.migrated` files back to `*.json` and start the bot again.
 
 ## Configuration
 
@@ -141,10 +211,13 @@ https://discord.com/api/oauth2/authorize?client_id=YOUR_CLIENT_ID&permissions=36
 - `tsconfig.json` - TypeScript configuration
 
 ### Available Scripts
-- `npm run dev` - Run in development mode with auto-reload
-- `npm run build` - Compile TypeScript to JavaScript
+- `npm run dev` - Run directly from TypeScript source (via tsx)
+- `npm run dev:panel` - Admin panel frontend with hot reload (needs the bot running)
+- `npm run build` - Compile the bot and build the admin panel
 - `npm start` - Run the compiled bot
-- `npm run deploy` - Deploy slash commands globally
+- `npm run typecheck` - Type-check the bot and the panel
+- `npm run pm2:start` - Build and run under pm2 (enables restarting from the panel)
+- Slash commands are deployed with `/deploy` or from the admin panel's Commands page
 
 ### Adding New Commands
 
@@ -174,14 +247,6 @@ export const command: SlashCommand = {
 - Automatic player cleanup when queue ends
 - Autoplay feature to continue playback
 
-### Song of the Day
-The Song of the Day feature provides:
-- **Two-tier genre selection** - Pick a main genre, then choose a specific sub-genre
-- **56 sub-genres** across 7 main categories
-- **Random options** at both levels
-- **MusicBrainz integration** for authentic music discovery
-- **Rich embeds** with song details, artist, year, and artwork
-
 ### Event Handling
 The bot handles player events:
 - `end` - Automatically plays next track or stops
@@ -201,11 +266,6 @@ The bot handles player events:
 - Ensure bot has voice permissions in the channel
 - Verify YouTube/YouTube Music search is working
 
-### Song of the Day returns no results
-- MusicBrainz API may have rate limits
-- Some genres have limited data in MusicBrainz
-- Try different sub-genres or use "Surprise Me"
-
 ## Contributing
 
 Contributions are welcome! Please:
@@ -223,7 +283,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [Discord.js](https://discord.js.org/) - Discord API library
 - [Shoukaku](https://github.com/Deivu/Shoukaku) - Lavalink client
 - [Lavalink](https://github.com/lavalink-devs/Lavalink) - Audio delivery server
-- [MusicBrainz](https://musicbrainz.org/) - Music metadata database
 
 ## Support
 

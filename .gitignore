@@ -3,3 +3,16 @@ dist/
 .env
 *.log
 .DS_Store
+
+# Runtime data: the data folder stays in the repo (via .gitkeep), its contents don't
+data/*
+!data/.gitkeep
+
+# Lavalink installed by scripts/setup-lavalink.(ps1|sh)
+lavalink/
+
+# Claude / AI tooling
+.claude/
+CLAUDE.md
+CLAUDE.local.md
+.mcp.json

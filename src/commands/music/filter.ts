@@ -5,7 +5,7 @@ import {
   MessageFlags
 } from 'discord.js';
 import { SlashCommand } from '../../interfaces/Command';
-import { FilterOptions } from 'shoukaku';
+import { FILTER_PRESETS } from '../../utils/MusicService';
 
 export const command: SlashCommand = {
   data: new SlashCommandBuilder()
@@ -59,89 +59,24 @@ export const command: SlashCommand = {
     }
     
     const filterType = interaction.options.getString('type', true);
-    let filters: FilterOptions = {};
-    let filterName = '';
+    const preset = FILTER_PRESETS[filterType];
+    
+    if (!preset) {
+      await interaction.reply({
+        content: '❌ Invalid filter type!',
+        flags: MessageFlags.Ephemeral
+      });
+      return;
+    }
     
     try {
-      switch (filterType) {
-        case 'none':
-          filters = {};
-          filterName = 'No filter';
-          break;
-          
-        case 'nightcore':
-          filters = {
-            timescale: { speed: 1.3, pitch: 1.3, rate: 1.0 }
-          };
-          filterName = 'Nightcore';
-          break;
-          
-        case 'vaporwave':
-          filters = {
-            timescale: { speed: 0.8, pitch: 0.8, rate: 1.0 },
-            equalizer: [
-              { band: 0, gain: 0.3 },
-              { band: 1, gain: 0.3 }
-            ]
-          };
-          filterName = 'Vaporwave';
-          break;
-          
-        case 'bassboost':
-          filters = {
-            equalizer: [
-              { band: 0, gain: 0.6 },
-              { band: 1, gain: 0.67 },
-              { band: 2, gain: 0.67 },
-              { band: 3, gain: 0.4 }
-            ]
-          };
-          filterName = 'Bassboost';
-          break;
-          
-        case '8d':
-          filters = {
-            rotation: { rotationHz: 0.2 }
-          };
-          filterName = '8D Audio';
-          break;
-          
-        case 'karaoke':
-          filters = {
-            karaoke: {
-              level: 1.0,
-              monoLevel: 1.0,
-              filterBand: 220.0,
-              filterWidth: 100.0
-            }
-          };
-          filterName = 'Karaoke';
-          break;
-          
-        case 'tremolo':
-          filters = {
-            tremolo: {
-              frequency: 4.0,
-              depth: 0.75
-            }
-          };
-          filterName = 'Tremolo';
-          break;
-          
-        default:
-          await interaction.reply({
-            content: '❌ Invalid filter type!',
-            flags: MessageFlags.Ephemeral
-          });
-          return;
-      }
-      
-      await queue.player.setFilters(filters);
+      await queue.player.setFilters(preset.filters);
+      queue.filter = filterType;
       
       if (filterType === 'none') {
         await interaction.reply('🎵 Removed all filters!');
       } else {
-        await interaction.reply(`🎛️ Applied **${filterName}** filter!`);
+        await interaction.reply(`🎛️ Applied **${preset.label}** filter!`);
       }
     } catch (error) {
       console.error('Filter error:', error);

@@ -20,6 +20,8 @@ export class MusicQueue {
   public volume: number = 100;
   public autoplay: boolean = false;
   public isDestroying: boolean = false;
+  public filter: string = 'none';
+  public voiceChannelId: string | null = null;
 
   constructor(textChannelId: string) {
     this.textChannelId = textChannelId;
@@ -129,5 +131,9 @@ export class QueueManager {
 
   size(): number {
     return this.queues.size;
+  }
+
+  entries(): [string, MusicQueue][] {
+    return Array.from(this.queues.entries());
   }
 }

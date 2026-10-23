@@ -50,9 +50,8 @@ export const command: SlashCommand = {
       return;
     }
     
-    await interaction.deferReply();
-    
-    const deferredReply = await interaction.fetchReply();
+    const response = await interaction.deferReply({ withResponse: true });
+    const deferredReplyId = response.resource?.message?.id;
     
     let amount = interaction.options.getInteger('amount') || 100;
     amount = amount < 100 ? amount + 1 : 100;
@@ -75,7 +74,7 @@ export const command: SlashCommand = {
       }
       
       const botMessagesArray = Array.from(botMessages.values());
-      const messagesToDelete = botMessagesArray.filter((msg) => msg.id !== deferredReply.id);
+      const messagesToDelete = botMessagesArray.filter((msg) => msg.id !== deferredReplyId);
       
       const now = Date.now();
       const twoWeeksAgo = now - (14 * 24 * 60 * 60 * 1000);
