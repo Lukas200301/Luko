@@ -11,7 +11,13 @@ export function rangeStart(range: PinboardRange): number | null {
 // Groups points into days (7/30 days), weeks (90 days) or months (year / all time), filling gaps with zero.
 // `c` is summed per bucket (e.g. reactions); `n` counts the points.
 export function buildTimeline(points: { t: number; c: number }[], range: PinboardRange): { label: string; start: number; n: number; sum: number }[] {
-  const unit = range === '7d' || range === '30d' ? 'day' : range === '90d' ? 'week' : 'month';
+  // "All time" starts at the first point, so its bucket size follows how far back that is.
+  const span = points.length ? Date.now() - points[0].t : 0;
+  const unit = range === '7d' || range === '30d' ? 'day'
+    : range === '90d' ? 'week'
+    : range === 'all' && span <= 45 * DAY ? 'day'
+    : range === 'all' && span <= 200 * DAY ? 'week'
+    : 'month';
 
   const startOf = (time: number): Date => {
     const d = new Date(time);
@@ -28,7 +34,7 @@ export function buildTimeline(points: { t: number; c: number }[], range: Pinboar
     return n;
   };
   const label = (d: Date): string => unit === 'month'
-    ? d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' })
+    ? `${d.toLocaleDateString('en-US', { month: 'short' })} '${String(d.getFullYear()).slice(-2)}`
     : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 
   const since = rangeStart(range);

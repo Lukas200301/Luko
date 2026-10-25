@@ -129,7 +129,7 @@ Luko comes with a web admin panel that runs inside the bot on port **5000**. It 
 
 - **Dashboard** - live status, uptime, ping, memory/CPU charts, Lavalink health, recent errors
 - **Music** - live player for every server: pause, skip, seek, volume, loop, filters, autoplay, drag-and-drop queue, search and add songs, start a session from the browser
-- **Pinboard** - any number of pinboards across servers, each with its own channel, emojis, reactions needed (per board and per emoji), ignored channels and options; per-board statistics (pins over time, emojis, top authors and channels, record pins) and a searchable list sortable by date or reactions and filterable by emoji, author and channel. **Post to Discord** sends the statistics as an embed to any channel: pick the time range, title, text, color, layout and which sections to show (in which order), with a live preview, and optionally post it automatically every Monday or on the 1st of the month
+- **Pinboard** - any number of pinboards across servers, each with its own channel, emojis, reactions needed (per board and per emoji), ignored channels and options; per-board statistics (pins over time, emojis, top authors and channels, record pins) and a searchable list sortable by date or reactions and filterable by emoji, author and channel. **Post to Discord** sends the statistics as an embed to any channel: pick the time range, title, text, color, layout and which sections to show (in which order), with a live preview and a chart image of the pins over time, and optionally post it automatically every Monday or on the 1st of the month
 - **Emojis** - upload, rename and delete the bot's own (application) emojis, usable in every server
 - **Playlists** - create playlists, add songs by search or link, reorder by drag and drop, play them on any server
 - **Music stats** - songs played over time, top songs, artists and listeners, time of day, and the full play history
@@ -307,6 +307,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [Discord.js](https://discord.js.org/) - Discord API library
 - [Shoukaku](https://github.com/Deivu/Shoukaku) - Lavalink client
 - [Lavalink](https://github.com/lavalink-devs/Lavalink) - Audio delivery server
+- [resvg](https://github.com/thx/resvg-js) - Renders the chart images in statistics posts
+- [Inter](https://github.com/rsms/inter) - Font used in chart images (SIL Open Font License, see `assets/fonts/OFL.txt`)
 
 ## Support
 

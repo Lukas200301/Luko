@@ -768,6 +768,7 @@ export interface EmbedData {
   color?: number;
   fields?: { name: string; value: string; inline?: boolean }[];
   thumbnail?: { url: string };
+  image?: { url: string };
   footer?: { text: string };
   timestamp?: string;
 }

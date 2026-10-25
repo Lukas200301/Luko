@@ -30,12 +30,14 @@ export function DiscordEmbed({ embed, botName, botAvatarUrl }: { embed: EmbedDat
                 ))}
               </div>
             )}
-            {(embed.footer?.text || time) && (
-              <div className="text-xs text-[#b5bac1]">{embed.footer?.text}{embed.footer?.text && time ? ' • ' : ''}{time}</div>
-            )}
           </div>
           {embed.thumbnail?.url && <img src={embed.thumbnail.url} alt="" className="size-20 shrink-0 rounded object-cover" />}
         </div>
+        {/* Like in Discord: the image spans the whole embed, below the fields, and the footer comes last. */}
+        {embed.image?.url && <img src={embed.image.url} alt="" className="block w-[calc(100%-1.75rem)] rounded px-0 pb-2 ml-3" />}
+        {(embed.footer?.text || time) && (
+          <div className="px-3 pb-3 text-xs text-[#b5bac1]">{embed.footer?.text}{embed.footer?.text && time ? ' • ' : ''}{time}</div>
+        )}
       </div>
     </div>
   );

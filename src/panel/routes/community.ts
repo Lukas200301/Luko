@@ -18,7 +18,7 @@ import {
   ReminderInfo
 } from '../../shared/types';
 import { backfillStatus, startBackfill } from '../../utils/PinboardBackfill';
-import { buildStatsEmbed, postStats, sanitizeStatsPost, statsPostFor, storedAuthorNames } from '../../utils/PinboardStatsPost';
+import { buildStatsMessage, postStats, sanitizeStatsPost, statsPostFor, storedAuthorNames } from '../../utils/PinboardStatsPost';
 import { resolveMentions, userInfo } from '../names';
 
 const RECENT_LIMIT = 25;
@@ -219,7 +219,10 @@ export const registerCommunityRoutes: RouteRegistrar = (app, ctx) => {
   app.post('/pinboard/boards/:boardId/stats-post/preview', async (request): Promise<EmbedPreviewResponse> => {
     const board = findBoard((request.params as { boardId: string }).boardId);
     const config = statsPostFrom(board, bodyOf(request));
-    const embed = buildStatsEmbed(client, board, config) as EmbedData;
+    const { embed: built, chart } = buildStatsMessage(client, board, config);
+    const embed = built as EmbedData;
+    // The panel can't load attachment:// URLs, so the preview gets the image inline.
+    if (chart) embed.image = { url: `data:image/png;base64,${chart.toString('base64')}` };
     const texts = [embed.description, ...(embed.fields ?? []).map(f => f.value)];
     const mentions = await resolveMentions(client, board.guildId, texts);
     mentions.users = { ...storedAuthorNames(client, board, config.range), ...mentions.users };

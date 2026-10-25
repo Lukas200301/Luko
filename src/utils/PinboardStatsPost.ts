@@ -1,5 +1,6 @@
-import { APIEmbed, APIEmbedField, Client } from 'discord.js';
+import { APIEmbed, APIEmbedField, AttachmentBuilder, Client } from 'discord.js';
 import { db } from './Database';
+import { renderBarChart } from './StatsChart';
 import {
   PINBOARD_STATS_SECTIONS,
   PinboardBoard,
@@ -14,7 +15,7 @@ import {
 const RANGES: PinboardRange[] = ['7d', '30d', '90d', '365d', 'all'];
 const RANGE_LABELS: Record<PinboardRange, string> = { '7d': 'Last 7 days', '30d': 'Last 30 days', '90d': 'Last 90 days', '365d': 'Last year', all: 'All time' };
 const MEDALS = ['🥇', '🥈', '🥉'];
-const SPARK = '▁▂▃▄▅▆▇█';
+export const CHART_FILE = 'pins-over-time.png';
 const FIELD_LIMIT = 1024;
 const DESCRIPTION_LIMIT = 4096;
 const CHECK_INTERVAL = 10 * 60 * 1000;
@@ -118,20 +119,36 @@ function excerpt(text: string, max = 60): string {
 const rank = (i: number) => MEDALS[i] ?? `\`${i + 1}.\``;
 const plural = (n: number, word: string) => `${n.toLocaleString('en-US')} ${word}${n === 1 ? '' : 's'}`;
 
-export function buildStatsEmbed(client: Client, board: PinboardBoard, config: PinboardStatsPost): APIEmbed {
+// The embed plus the chart image (when "Pins over time" is shown), which the embed shows via attachment://.
+export function buildStatsMessage(client: Client, board: PinboardBoard, config: PinboardStatsPost): { embed: APIEmbed; chart: Buffer | null } {
   const stats = client.pinboardManager.stats(board.id, config.range);
+  const embed = buildStatsEmbed(client, board, config, stats);
+  if (!config.sections.includes('timeline') || stats.pins === 0 || stats.timeline.length === 0) return { embed, chart: null };
+
+  // Long ranges are grouped by month; show the last two years at most.
+  const points = stats.timeline.slice(-24);
+  const busiest = points.reduce((a, b) => (b.pins > a.pins ? b : a));
+  const chart = renderBarChart(points.map(p => ({ label: p.label, value: p.pins })), {
+    title: 'Pins over time',
+    subtitle: `${plural(points.reduce((sum, p) => sum + p.pins, 0), 'pin')} · busiest: ${busiest.label} (${busiest.pins})`,
+    color: config.color
+  });
+  embed.image = { url: `attachment://${CHART_FILE}` };
+  return { embed, chart };
+}
+
+function buildStatsEmbed(client: Client, board: PinboardBoard, config: PinboardStatsPost, stats: ReturnType<Client['pinboardManager']['stats']>): APIEmbed {
   const guild = client.guilds.cache.get(board.guildId);
   const empty = 'Nothing in this time range';
 
   const sectionLines: Record<PinboardStatsSection, () => string[]> = {
     totals: () => [`**${plural(stats.pins, 'pin')}** · **${plural(stats.reactions, 'reaction')}** · ${stats.averageReactions.toLocaleString('en-US')} per pin · record **${stats.maxReactions}**`],
+    // The chart itself is an image at the bottom of the embed (see buildStatsMessage).
     timeline: () => {
-      const points = stats.timeline.slice(-24);
+      const points = stats.timeline;
       if (stats.pins === 0 || points.length === 0) return [empty];
-      const max = Math.max(1, ...points.map(p => p.pins));
       const busiest = points.reduce((a, b) => (b.pins > a.pins ? b : a));
-      const spark = points.map(p => SPARK[Math.round((p.pins / max) * (SPARK.length - 1))]).join('');
-      return ['```', spark, '```', `*${points[0].label} – ${points[points.length - 1].label} · busiest: ${busiest.label} (${plural(busiest.pins, 'pin')})*`];
+      return [`Busiest: **${busiest.label}** with ${plural(busiest.pins, 'pin')}`, `${points[0].label} – ${points[points.length - 1].label} · chart below 👇`];
     },
     authors: () => stats.authors.slice(0, config.limit).map((a, i) => {
       const who = config.mentionAuthors && /^\d{15,25}$/.test(a.key) ? `<@${a.key}>` : `**${a.name}**`;
@@ -207,7 +224,12 @@ export async function postStats(client: Client, board: PinboardBoard, config: Pi
   if (!channel || channel.isDMBased() || !channel.isSendable() || channel.guildId !== board.guildId) {
     throw new Error('The bot cannot post in that channel (it has to be a text channel on the pinboard\'s server).');
   }
-  const message = await channel.send({ embeds: [buildStatsEmbed(client, board, config)], allowedMentions: { parse: [] } });
+  const { embed, chart } = buildStatsMessage(client, board, config);
+  const message = await channel.send({
+    embeds: [embed],
+    files: chart ? [new AttachmentBuilder(chart, { name: CHART_FILE })] : [],
+    allowedMentions: { parse: [] }
+  });
   return message.url;
 }
 
