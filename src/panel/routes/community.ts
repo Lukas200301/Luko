@@ -1,13 +1,14 @@
 import { Client, EmbedBuilder, resolveColor } from 'discord.js';
 import { RouteRegistrar, PanelError, audit, bodyOf, bool, isSnowflake, num, str } from '../context';
-import { EmbedPayload, EmojiInfo, PinboardBoard, PinboardBoardStatus, PinboardEntry, ReminderInfo } from '../../shared/types';
+import { EmbedPayload, EmojiInfo, PinboardBoard, PinboardBoardStatus, PinboardEntry, PinboardEntryPage, ReminderInfo } from '../../shared/types';
 
-const BACKFILL_BATCH = 20;
+const RECENT_LIMIT = 25;
+const MAX_PAGE_SIZE = 50;
 
 // Entries pinned by older versions only stored message IDs. Their author, text and image
-// can be read back from the pinboard post itself, which is what this does (a few at a time).
+// can be read back from the pinboard post itself. Only done for the page being viewed.
 async function backfillBoard(client: Client, board: PinboardBoard, entries: PinboardEntry[]): Promise<number> {
-  const missing = entries.filter(e => e.boardId === board.id && !e.authorName).slice(0, BACKFILL_BATCH);
+  const missing = entries.filter(e => e.boardId === board.id && !e.authorName);
   if (missing.length === 0) return 0;
 
   const channel = await client.channels.fetch(board.channelId).catch(() => null);
@@ -15,7 +16,25 @@ async function backfillBoard(client: Client, board: PinboardBoard, entries: Pinb
 
   let filled = 0;
   await Promise.all(missing.map(async (entry) => {
-    const message = await channel.messages.fetch(entry.pinboardMessageId).catch(() => null);
+    let deleted = false;
+    const message = await channel.messages.fetch(entry.pinboardMessageId).catch((error: { code?: number }) => {
+      // 10008 = Unknown Message: the pinboard post was deleted, so there is nothing to read back.
+      deleted = error?.code === 10008;
+      return null;
+    });
+
+    if (deleted) {
+      // Remember that, so the post isn't requested again on every visit.
+      client.pinboardManager.setPinboardMessageId(board.id, entry.originalMessageId, entry.pinboardMessageId, {
+        authorName: 'Unknown author',
+        excerpt: '',
+        // Keep the unknown pin date unknown (0 sorts last) instead of defaulting to "now".
+        pinnedAt: entry.pinnedAt ?? 0
+      });
+      filled++;
+      return;
+    }
+
     const embed = message?.embeds[0];
     if (!message || !embed) return;
 
@@ -35,11 +54,12 @@ async function backfillBoard(client: Client, board: PinboardBoard, entries: Pinb
   return filled;
 }
 
-function boardStatus(client: Client, board: PinboardBoard): PinboardBoardStatus {
+function boardStatus(client: Client, board: PinboardBoard, entryCount: number): PinboardBoardStatus {
   const guild = client.guilds.cache.get(board.guildId);
   const channel = guild?.channels.cache.get(board.channelId);
   return {
     ...board,
+    entryCount,
     botInGuild: !!guild || !board.guildId,
     guildName: guild?.name ?? null,
     channelName: channel?.name ?? null,
@@ -99,22 +119,36 @@ export const registerCommunityRoutes: RouteRegistrar = (app, ctx) => {
 
   // ---- Pinboard ----
 
+  // Board settings plus the newest pinned messages. Kept fast: no Discord requests here.
   app.get('/pinboard', async () => {
     const settings = client.settings.get();
-    const boards = settings.pinboard.boards;
-
-    let entries = client.pinboardManager.getEntries();
-    let filled = 0;
-    for (const board of boards) {
-      if (client.guilds.cache.has(board.guildId)) filled += await backfillBoard(client, board, entries);
-    }
-    if (filled > 0) entries = client.pinboardManager.getEntries();
+    const counts = client.pinboardManager.countsByBoard();
 
     return {
       enabled: settings.features.pinboard,
-      boards: boards.map(board => boardStatus(client, board)),
-      entries
+      boards: settings.pinboard.boards.map(board => boardStatus(client, board, counts.get(board.id) ?? 0)),
+      recent: client.pinboardManager.getPage(null, RECENT_LIMIT, 0),
+      total: client.pinboardManager.size()
     };
+  });
+
+  // One page of a board's pinned messages, newest first. Missing previews on this page are
+  // read back from the pinboard posts before answering.
+  app.get('/pinboard/boards/:boardId/entries', async (request): Promise<PinboardEntryPage> => {
+    const { boardId } = request.params as { boardId: string };
+    const query = request.query as Record<string, unknown>;
+    const board = client.settings.get().pinboard.boards.find(b => b.id === boardId);
+    if (!board) throw new PanelError(404, 'Pinboard not found.');
+
+    const limit = Math.round(num(query.limit, RECENT_LIMIT, 1, MAX_PAGE_SIZE));
+    const offset = Math.round(num(query.offset, 0, 0, Number.MAX_SAFE_INTEGER));
+    let entries = client.pinboardManager.getPage(boardId, limit, offset);
+
+    if (client.guilds.cache.has(board.guildId) && await backfillBoard(client, board, entries) > 0) {
+      entries = client.pinboardManager.getPage(boardId, limit, offset);
+    }
+
+    return { entries, total: client.pinboardManager.countsByBoard().get(boardId) ?? 0, offset, limit };
   });
 
   app.delete('/pinboard/entries/:boardId/:messageId', async (request) => {

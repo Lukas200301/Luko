@@ -14,6 +14,7 @@ function page<K extends string, P>(load: () => Promise<Record<K, ComponentType<P
 
 const MusicPage = page(() => import('./pages/Music'), 'MusicPage');
 const PinboardPage = page(() => import('./pages/Pinboard'), 'PinboardPage');
+const PinboardBoardPage = page(() => import('./pages/Pinboard'), 'PinboardBoardPage');
 const RemindersPage = page(() => import('./pages/Reminders'), 'RemindersPage');
 const ServersPage = page(() => import('./pages/Servers'), 'ServersPage');
 const CommandsPage = page(() => import('./pages/Commands'), 'CommandsPage');
@@ -43,6 +44,7 @@ function ProtectedApp() {
             <Route index element={<DashboardPage />} />
             <Route path="music" element={<MusicPage />} />
             <Route path="pinboard" element={<PinboardPage />} />
+            <Route path="pinboard/:boardId" element={<PinboardBoardPage />} />
             <Route path="reminders" element={<RemindersPage />} />
             <Route path="servers" element={<ServersPage />} />
             <Route path="servers/:guildId" element={<ServersPage />} />

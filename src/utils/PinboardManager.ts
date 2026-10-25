@@ -35,7 +35,10 @@ const statements = {
   get: db.prepare('SELECT * FROM pinboard WHERE board_id = ? AND original_message_id = ?'),
   all: db.prepare('SELECT * FROM pinboard ORDER BY pinned_at DESC'),
   byBoard: db.prepare('SELECT * FROM pinboard WHERE board_id = ? ORDER BY pinned_at DESC'),
+  page: db.prepare('SELECT * FROM pinboard ORDER BY pinned_at DESC, rowid DESC LIMIT ? OFFSET ?'),
+  boardPage: db.prepare('SELECT * FROM pinboard WHERE board_id = ? ORDER BY pinned_at DESC, rowid DESC LIMIT ? OFFSET ?'),
   count: db.prepare('SELECT COUNT(*) AS n FROM pinboard'),
+  countsByBoard: db.prepare('SELECT board_id, COUNT(*) AS n FROM pinboard GROUP BY board_id'),
   upsert: db.prepare(`
     INSERT INTO pinboard (board_id, original_message_id, pinboard_message_id, channel_id, author_name, author_avatar_url, excerpt, image_url, count, pinned_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -90,6 +93,17 @@ export class PinboardManager {
   public getEntries(boardId?: string): PinboardEntry[] {
     const rows = boardId ? statements.byBoard.all(boardId) : statements.all.all();
     return (rows as unknown as PinboardRow[]).map(toEntry);
+  }
+
+  // Newest first. Without a board, entries of all boards are mixed.
+  public getPage(boardId: string | null, limit: number, offset: number): PinboardEntry[] {
+    const rows = boardId ? statements.boardPage.all(boardId, limit, offset) : statements.page.all(limit, offset);
+    return (rows as unknown as PinboardRow[]).map(toEntry);
+  }
+
+  public countsByBoard(): Map<string, number> {
+    const rows = statements.countsByBoard.all() as Array<{ board_id: string; n: number }>;
+    return new Map(rows.map(row => [row.board_id, row.n]));
   }
 
   public size(): number {

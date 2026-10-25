@@ -39,6 +39,8 @@ const SCHEMA = `
     pinned_at INTEGER,
     PRIMARY KEY (board_id, original_message_id)
   );
+  CREATE INDEX IF NOT EXISTS pinboard_board_pinned ON pinboard (board_id, pinned_at);
+  CREATE INDEX IF NOT EXISTS pinboard_pinned ON pinboard (pinned_at);
 
   CREATE TABLE IF NOT EXISTS command_stats (
     command TEXT PRIMARY KEY,

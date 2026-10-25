@@ -382,6 +382,7 @@ export interface MemberListResponse {
 }
 
 export interface PinboardBoardStatus extends PinboardBoard {
+  entryCount: number;
   botInGuild: boolean;
   guildName: string | null;
   channelName: string | null;
@@ -477,4 +478,11 @@ export interface ClientTestResult {
   ok: boolean;
   status: number;
   message: string;
+}
+
+export interface PinboardEntryPage {
+  entries: PinboardEntry[];
+  total: number;
+  offset: number;
+  limit: number;
 }
