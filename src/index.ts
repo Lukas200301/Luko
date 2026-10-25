@@ -21,6 +21,13 @@ import { registerPinboard } from './utils/PinboardService';
 import { SettingsManager } from './utils/SettingsManager';
 import { StatsManager } from './utils/StatsManager';
 import { AuditLog } from './utils/AuditLog';
+import { AlertManager } from './utils/AlertManager';
+import { BackupManager } from './utils/BackupManager';
+import { BirthdayManager } from './utils/BirthdayManager';
+import { PollManager } from './utils/PollManager';
+import { MusicHistory } from './utils/MusicHistory';
+import { PlaylistManager } from './utils/PlaylistManager';
+import { startUpdateChecks } from './utils/Updater';
 import { loadCommands } from './utils/CommandLoader';
 import { MUSIC_COMMANDS, destroyQueue, isMusicAvailable } from './utils/MusicService';
 import { ActivityKind } from './shared/types';
@@ -38,6 +45,12 @@ declare module 'discord.js' {
     settings: SettingsManager;
     stats: StatsManager;
     auditLog: AuditLog;
+    alerts: AlertManager;
+    backups: BackupManager;
+    birthdays: BirthdayManager;
+    polls: PollManager;
+    musicHistory: MusicHistory;
+    playlists: PlaylistManager;
     startedAt: number;
   }
 }
@@ -74,6 +87,12 @@ client.pinboardManager = new PinboardManager();
 client.queueManager = new QueueManager();
 client.stats = new StatsManager(client);
 client.auditLog = new AuditLog();
+client.alerts = new AlertManager(client);
+client.backups = new BackupManager(client);
+client.birthdays = new BirthdayManager(client);
+client.polls = new PollManager(client);
+client.musicHistory = new MusicHistory(client);
+client.playlists = new PlaylistManager();
 
 if (startupSettings.features.music) {
   client.shoukaku = createShoukaku(client);
@@ -102,6 +121,14 @@ function getCommandBlockReason(commandName: string, guildId: string | null): str
 
   if (commandName === 'remind' && !settings.features.reminders) {
     return '🚫 Reminders are currently deactivated.';
+  }
+
+  if (commandName === 'birthday' && !settings.features.birthdays) {
+    return '🚫 Birthdays are currently deactivated.';
+  }
+
+  if (commandName === 'poll' && !settings.features.polls) {
+    return '🚫 Polls are currently deactivated.';
   }
 
   const commandSettings = settings.commands[commandName];
@@ -191,6 +218,11 @@ client.once('clientReady', async () => {
   console.log('💡 Commands are loaded in memory. Use /deploy or the admin panel to register them with Discord.');
 
   schedulePresence();
+  client.alerts.start();
+  client.backups.start();
+  client.birthdays.start();
+  client.polls.start();
+  startUpdateChecks(client);
 });
 
 client.on('interactionCreate', async (interaction) => {
@@ -211,6 +243,18 @@ client.on('interactionCreate', async (interaction) => {
     } catch (error) {
       console.error(`❌ Error handling autocomplete for ${interaction.commandName}:`, error);
       try { await interaction.respond([]); } catch (e) {}
+    }
+    return;
+  }
+
+  if (interaction.isButton() && interaction.customId.startsWith('poll:')) {
+    try {
+      await client.polls.handleButton(interaction);
+    } catch (error) {
+      console.error('❌ Error handling a poll button:', error);
+      if (!interaction.replied && !interaction.deferred) {
+        await interaction.reply({ content: '❌ Something went wrong with this poll.', flags: MessageFlags.Ephemeral }).catch(() => {});
+      }
     }
     return;
   }

@@ -19,6 +19,13 @@ A feature-rich Discord music bot built with TypeScript, Discord.js v14, and Lava
 - `/stop` - Stop playback and clear the queue
 - `/queue` - View the current queue
 - `/loop <mode>` - Set loop mode (off/track/queue)
+- `/playlist play|save|add|create|show|list|remove|delete` - Saved playlists everyone can play
+- `/history` - Recently played and most played songs on the server
+
+### 🎉 Community Commands
+- `/poll <question> <options>` - Button poll with live results (optional duration, multiple choice, anonymous)
+- `/birthday set|remove|show|upcoming` - Save your birthday; the bot congratulates you in the server's birthday channel
+- `/remind <time> <message>` - Get reminded later
 
 ### 🔧 Utility Commands
 - `/ping` - Check bot latency
@@ -124,13 +131,20 @@ Luko comes with a web admin panel that runs inside the bot on port **5000**. It 
 - **Music** - live player for every server: pause, skip, seek, volume, loop, filters, autoplay, drag-and-drop queue, search and add songs, start a session from the browser
 - **Pinboard** - any number of pinboards across servers, each with its own channel, emojis, reactions needed (per board and per emoji), ignored channels and options; per-board statistics (pins over time, emojis, top authors and channels, record pins) and a searchable list sortable by date or reactions and filterable by emoji, author and channel
 - **Emojis** - upload, rename and delete the bot's own (application) emojis, usable in every server
+- **Playlists** - create playlists, add songs by search or link, reorder by drag and drop, play them on any server
+- **Music stats** - songs played over time, top songs, artists and listeners, time of day, and the full play history
 - **Reminders** - see, create and delete all reminders, picking the user from the server's member list
+- **Birthdays** - everyone's birthdays, the announcement channel per server, message and time
+- **Polls** - start polls, watch results live, end or delete them
 - **Servers** - server details, channels, roles, emojis, bot permissions, bot nickname, per-server command toggles, leave server
 - **Commands** - enable/disable commands (disabled ones are removed from Discord's / menu automatically), usage counts, deploy, reload from disk
 - **Messages** - send messages and embeds as the bot, with a live preview
 - **Presence** - online status, rotating activities with placeholders, maintenance mode
 - **Lavalink** - live stats, connection settings, YouTube playback test and sign-in, and for a local install: start/stop/restart, update, config editor and log
 - **Logs & Activity** - live console, command usage history, audit log of panel changes
+- **Maintenance** - install updates from GitHub with one click (pull, install, build, restart, with a live log),
+  database backups (daily automatic plus manual, download and restore), and owner alerts by DM
+  (Lavalink down, many errors, disk almost full, CPU hot, new update, failed backup), each one switchable
 - **Settings** - feature toggles, music settings, member list, admin list, web access, restart (pm2)
 
 ### Who can log in
@@ -153,6 +167,16 @@ panel.example.com {
     reverse_proxy localhost:5000
 }
 ```
+
+### Updates from the panel
+*Maintenance → Updates* checks GitHub every 6 hours. **Install update** backs up the database, runs `git pull`,
+`npm install` (only when dependencies changed) and `npm run build`, then restarts the bot through pm2. It refuses to run
+while files on the server have local changes (`package-lock.json` is reset automatically), so a pull can't fail halfway.
+
+### Backups
+Backups are written to `data/backups/` (daily at the chosen time, before every update and before every restore).
+Restoring replaces the database with the backup and restarts the bot (needs pm2); the current data is backed up first.
+Copy a few backups to another device now and then: they don't help if the SD card itself dies.
 
 ### Locked out?
 If a wrong domain or port setting keeps you out of the panel, run `npm run panel:reset` on the server

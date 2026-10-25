@@ -24,6 +24,11 @@ const LogsPage = page(() => import('./pages/Logs'), 'LogsPage');
 const EmojisPage = page(() => import('./pages/Emojis'), 'EmojisPage');
 const LavalinkPage = page(() => import('./pages/Lavalink'), 'LavalinkPage');
 const SettingsPage = page(() => import('./pages/Settings'), 'SettingsPage');
+const MaintenancePage = page(() => import('./pages/Maintenance'), 'MaintenancePage');
+const BirthdaysPage = page(() => import('./pages/Birthdays'), 'BirthdaysPage');
+const PollsPage = page(() => import('./pages/Polls'), 'PollsPage');
+const MusicStatsPage = page(() => import('./pages/MusicStats'), 'MusicStatsPage');
+const PlaylistsPage = page(() => import('./pages/Playlists'), 'PlaylistsPage');
 
 function ProtectedApp() {
   const { data, isLoading } = useMe();
@@ -43,6 +48,10 @@ function ProtectedApp() {
           <Routes>
             <Route index element={<DashboardPage />} />
             <Route path="music" element={<MusicPage />} />
+            <Route path="music/stats" element={<MusicStatsPage />} />
+            <Route path="playlists" element={<PlaylistsPage />} />
+            <Route path="birthdays" element={<BirthdaysPage />} />
+            <Route path="polls" element={<PollsPage />} />
             <Route path="pinboard" element={<PinboardPage />} />
             <Route path="pinboard/:boardId" element={<PinboardBoardPage />} />
             <Route path="reminders" element={<RemindersPage />} />
@@ -55,6 +64,7 @@ function ProtectedApp() {
             <Route path="lavalink" element={<LavalinkPage />} />
             <Route path="logs" element={<LogsPage />} />
             <Route path="settings" element={<SettingsPage user={data.user} />} />
+            <Route path="maintenance" element={<MaintenancePage user={data.user} />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </Suspense>

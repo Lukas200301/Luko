@@ -16,6 +16,9 @@ import { registerCommunityRoutes } from './routes/community';
 import { registerSettingsRoutes } from './routes/settings';
 import { registerEmojiRoutes } from './routes/emojis';
 import { registerLavalinkRoutes } from './routes/lavalink';
+import { registerMaintenanceRoutes } from './routes/maintenance';
+import { registerSocialRoutes } from './routes/social';
+import { registerLibraryRoutes } from './routes/library';
 
 // The built React app (npm run build:panel) lives here, both under tsx and in dist/.
 const UI_DIR = path.resolve(__dirname, '..', '..', 'dist', 'panel-ui');
@@ -83,6 +86,9 @@ export async function startPanel(client: Client): Promise<void> {
     registerSettingsRoutes(api, ctx);
     registerEmojiRoutes(api, ctx);
     registerLavalinkRoutes(api, ctx);
+    registerMaintenanceRoutes(api, ctx);
+    registerSocialRoutes(api, ctx);
+    registerLibraryRoutes(api, ctx);
   }, { prefix: '/api' });
 
   const uiBuilt = fs.existsSync(path.join(UI_DIR, 'index.html'));

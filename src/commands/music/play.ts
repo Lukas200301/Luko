@@ -117,7 +117,7 @@ export const command: SlashCommand = {
         shardId: interaction.guild!.shardId,
         voiceChannelId: voiceChannel.id,
         textChannelId: interaction.channelId,
-        tracks: tracksToAdd.map(track => toQueueTrack(track, interaction.user.tag))
+        tracks: tracksToAdd.map(track => toQueueTrack(track, interaction.user.tag, interaction.user.id))
       });
 
       if (resolved.playlistName) {

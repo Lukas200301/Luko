@@ -14,8 +14,44 @@ const sanitizers: { [K in SettingsSection]?: Sanitizer<K> } = {
   features: (input, current) => ({
     music: bool(input.music, current.music),
     pinboard: bool(input.pinboard, current.pinboard),
-    reminders: bool(input.reminders, current.reminders)
+    reminders: bool(input.reminders, current.reminders),
+    birthdays: bool(input.birthdays, current.birthdays),
+    polls: bool(input.polls, current.polls),
+    musicHistory: bool(input.musicHistory, current.musicHistory)
   }),
+
+  backups: (input, current) => ({
+    enabled: bool(input.enabled, current.enabled),
+    hour: Math.round(num(input.hour, current.hour, 0, 23)),
+    keep: Math.round(num(input.keep, current.keep, 1, 90))
+  }),
+
+  alerts: (input, current) => ({
+    enabled: bool(input.enabled, current.enabled),
+    lavalinkDown: bool(input.lavalinkDown, current.lavalinkDown),
+    errors: bool(input.errors, current.errors),
+    disk: bool(input.disk, current.disk),
+    diskPercent: Math.round(num(input.diskPercent, current.diskPercent, 50, 99)),
+    temperature: bool(input.temperature, current.temperature),
+    temperatureC: Math.round(num(input.temperatureC, current.temperatureC, 40, 100)),
+    updates: bool(input.updates, current.updates),
+    backups: bool(input.backups, current.backups)
+  }),
+
+  birthdays: (input, current) => {
+    const channels: Record<string, string> = {};
+    if (typeof input.channels === 'object' && input.channels !== null) {
+      for (const [guildId, channelId] of Object.entries(input.channels as Record<string, unknown>).slice(0, 200)) {
+        const channel = str(channelId, 30);
+        if (isSnowflake(guildId) && isSnowflake(channel)) channels[guildId] = channel;
+      }
+    }
+    return {
+      hour: Math.round(num(input.hour, current.hour, 0, 23)),
+      message: str(input.message, 500) || current.message,
+      channels: typeof input.channels === 'object' && input.channels !== null ? channels : current.channels
+    };
+  },
 
   music: (input, current) => ({
     autoDeleteResponses: bool(input.autoDeleteResponses, current.autoDeleteResponses),

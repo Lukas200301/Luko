@@ -17,7 +17,31 @@ function createDefaults(): BotSettings {
     features: {
       music: env.MUSIC_ENABLED ? env.MUSIC_ENABLED === 'true' : true,
       pinboard: !!env.PINBOARD_GUILD_ID,
-      reminders: true
+      reminders: true,
+      birthdays: true,
+      polls: true,
+      musicHistory: true
+    },
+    backups: {
+      enabled: true,
+      hour: 4,
+      keep: 7
+    },
+    alerts: {
+      enabled: false,
+      lavalinkDown: true,
+      errors: true,
+      disk: true,
+      diskPercent: 90,
+      temperature: true,
+      temperatureC: 75,
+      updates: true,
+      backups: true
+    },
+    birthdays: {
+      hour: 9,
+      message: '🎂 Happy birthday {user}! 🎉',
+      channels: {}
     },
     music: {
       autoDeleteResponses: true,

@@ -45,6 +45,38 @@ export interface BotSettings {
     music: boolean;
     pinboard: boolean;
     reminders: boolean;
+    birthdays: boolean;
+    polls: boolean;
+    // Keep a history of played songs (for the music statistics).
+    musicHistory: boolean;
+  };
+  backups: {
+    // Automatic daily backup of data/luko.db.
+    enabled: boolean;
+    // Hour of the day (server time) for the automatic backup.
+    hour: number;
+    // Automatic backups to keep; older ones are deleted.
+    keep: number;
+  };
+  alerts: {
+    // Direct messages to the owner when something needs attention.
+    enabled: boolean;
+    lavalinkDown: boolean;
+    errors: boolean;
+    disk: boolean;
+    diskPercent: number;
+    temperature: boolean;
+    temperatureC: number;
+    updates: boolean;
+    backups: boolean;
+  };
+  birthdays: {
+    // Hour of the day (server time) when birthdays are announced.
+    hour: number;
+    // {user} = mention, {name} = display name, {age} = new age (empty when the year is unknown).
+    message: string;
+    // Announcement channel per server.
+    channels: Record<string, string>;
   };
   music: {
     autoDeleteResponses: boolean;
@@ -151,6 +183,7 @@ export interface Overview {
     cpuPercent: number;
   };
   features: BotSettings['features'];
+  host: HostInfo;
   maintenance: boolean;
   musicAvailable: boolean;
   musicRestartRequired: boolean;
@@ -532,4 +565,170 @@ export interface PinboardEntryPage {
   offset: number;
   limit: number;
   mentions: DiscordMentions;
+}
+
+// The machine the bot runs on (e.g. a Raspberry Pi).
+export interface HostInfo {
+  // °C, null where the system doesn't report it.
+  cpuTemp: number | null;
+  diskUsed: number;
+  diskTotal: number;
+  // 1, 5 and 15 minute load averages (zeros on Windows).
+  load: number[];
+}
+
+// ---------- Backups ----------
+
+export type BackupKind = 'auto' | 'manual' | 'before-restore' | 'before-update';
+
+export interface BackupInfo {
+  name: string;
+  kind: BackupKind;
+  size: number;
+  createdAt: number;
+}
+
+export interface BackupOverview {
+  backups: BackupInfo[];
+  dir: string;
+  databaseSize: number;
+  lastAutoBackup: number | null;
+  // Restoring restarts the bot, which needs pm2.
+  canRestore: boolean;
+}
+
+// ---------- Updates ----------
+
+export interface UpdateCommit {
+  hash: string;
+  subject: string;
+  author: string;
+  date: number;
+}
+
+export interface UpdateStatus {
+  // False when the bot isn't a git checkout or git isn't installed.
+  gitAvailable: boolean;
+  branch: string | null;
+  current: UpdateCommit | null;
+  // New commits on GitHub that aren't installed yet.
+  behind: number;
+  commits: UpdateCommit[];
+  // Files changed on the server; a pull would fail with these.
+  changedFiles: string[];
+  checkedAt: number | null;
+  checkError: string | null;
+  running: boolean;
+  step: string | null;
+  log: string[];
+  finishedAt: number | null;
+  success: boolean | null;
+  pm2: boolean;
+}
+
+// ---------- Birthdays ----------
+
+export interface BirthdayInfo {
+  guildId: string;
+  userId: string;
+  userName: string;
+  avatarUrl: string | null;
+  day: number;
+  month: number;
+  year: number | null;
+  // Next birthday (midnight, server time) and the age then (null without a year).
+  nextAt: number;
+  nextAge: number | null;
+}
+
+// ---------- Polls ----------
+
+export interface PollOptionResult {
+  label: string;
+  votes: number;
+}
+
+export interface PollInfo {
+  id: string;
+  guildId: string | null;
+  guildName: string | null;
+  channelId: string;
+  channelName: string | null;
+  messageId: string | null;
+  question: string;
+  options: PollOptionResult[];
+  multiple: boolean;
+  anonymous: boolean;
+  creatorId: string;
+  creatorName: string;
+  createdAt: number;
+  endsAt: number | null;
+  endedAt: number | null;
+  voters: number;
+}
+
+// ---------- Music history and playlists ----------
+
+export interface MusicPlay {
+  id: number;
+  guildId: string;
+  guildName: string | null;
+  title: string;
+  author: string | null;
+  uri: string | null;
+  source: string | null;
+  duration: number;
+  artworkUrl: string | null;
+  requestedBy: string | null;
+  requestedById: string | null;
+  playedAt: number;
+}
+
+export type StatsRange = PinboardRange;
+
+export interface MusicStats {
+  range: StatsRange;
+  plays: number;
+  listeningTime: number;
+  uniqueTracks: number;
+  uniqueRequesters: number;
+  topTracks: { title: string; author: string | null; uri: string | null; artworkUrl: string | null; plays: number }[];
+  topArtists: { author: string; plays: number }[];
+  topRequesters: { userId: string | null; name: string; plays: number }[];
+  timeline: { label: string; start: number; plays: number }[];
+  // Plays per hour of the day (server time), index 0 = midnight.
+  byHour: number[];
+  guilds: { guildId: string; name: string | null; plays: number }[];
+}
+
+export interface MusicHistoryPage {
+  plays: MusicPlay[];
+  total: number;
+  offset: number;
+  limit: number;
+}
+
+export interface PlaylistSummary {
+  id: number;
+  name: string;
+  ownerId: string;
+  ownerName: string | null;
+  trackCount: number;
+  duration: number;
+  artworkUrl: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface PlaylistTrackInfo {
+  id: number;
+  title: string;
+  author: string | null;
+  uri: string | null;
+  duration: number;
+  artworkUrl: string | null;
+}
+
+export interface PlaylistDetail extends PlaylistSummary {
+  tracks: PlaylistTrackInfo[];
 }

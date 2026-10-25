@@ -136,7 +136,7 @@ export const command: SlashCommand = {
             shardId: interaction.guild!.shardId,
             voiceChannelId: voiceChannel.id,
             textChannelId: interaction.channelId,
-            tracks: [toQueueTrack(selectedTrack, interaction.user.tag)]
+            tracks: [toQueueTrack(selectedTrack, interaction.user.tag, interaction.user.id)]
           });
           
           const embed = new EmbedBuilder()

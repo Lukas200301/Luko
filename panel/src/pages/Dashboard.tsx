@@ -1,7 +1,7 @@
 import { lazy, Suspense, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
-import { Activity, AlertTriangle, Bell, Clock, Cpu, Gauge, MemoryStick, Music, Pin, Server, Terminal, Users, Zap } from 'lucide-react';
+import { Activity, AlertTriangle, Bell, Cake, Clock, Cpu, Gauge, HardDrive, MemoryStick, Music, Pin, Server, Terminal, Thermometer, Users, Vote, Zap } from 'lucide-react';
 import { api } from '../lib/api';
 import { useLive } from '../lib/live';
 import { cn, formatBytes, formatNumber, formatUptime, timeAgo } from '../lib/utils';
@@ -84,6 +84,23 @@ export function DashboardPage() {
             <MetricRow icon={<MemoryStick className="size-4" />} label="Memory (RSS)" value={formatBytes(proc.memoryRss)} />
             <MetricRow icon={<MemoryStick className="size-4" />} label="Heap" value={`${formatBytes(proc.heapUsed)} / ${formatBytes(proc.heapTotal)}`} />
             <MetricRow icon={<Cpu className="size-4" />} label="CPU" value={`${proc.cpuPercent}%`} />
+            {overview.host.cpuTemp !== null && (
+              <MetricRow
+                icon={<Thermometer className="size-4" />}
+                label="CPU temperature"
+                value={<span className={cn(overview.host.cpuTemp >= 75 ? 'text-danger' : overview.host.cpuTemp >= 65 && 'text-warning')}>{overview.host.cpuTemp} °C</span>}
+              />
+            )}
+            {overview.host.diskTotal > 0 && (
+              <MetricRow
+                icon={<HardDrive className="size-4" />}
+                label="Disk"
+                value={`${formatBytes(overview.host.diskUsed)} / ${formatBytes(overview.host.diskTotal)} (${Math.round((overview.host.diskUsed / overview.host.diskTotal) * 100)}%)`}
+              />
+            )}
+            {overview.host.load.some(n => n > 0) && (
+              <MetricRow icon={<Gauge className="size-4" />} label="System load" value={overview.host.load.map(n => n.toFixed(2)).join(' · ')} />
+            )}
           </CardBody>
         </Card>
       </div>
@@ -118,7 +135,9 @@ export function DashboardPage() {
             {[
               { label: 'Music', on: overview.features.music, icon: <Music className="size-4" />, to: '/music' },
               { label: 'Pinboard', on: overview.features.pinboard, icon: <Pin className="size-4" />, to: '/pinboard', extra: `${counts.pinboardEntries} pinned` },
-              { label: 'Reminders', on: overview.features.reminders, icon: <Bell className="size-4" />, to: '/reminders', extra: `${counts.reminders} pending` }
+              { label: 'Reminders', on: overview.features.reminders, icon: <Bell className="size-4" />, to: '/reminders', extra: `${counts.reminders} pending` },
+              { label: 'Birthdays', on: overview.features.birthdays, icon: <Cake className="size-4" />, to: '/birthdays' },
+              { label: 'Polls', on: overview.features.polls, icon: <Vote className="size-4" />, to: '/polls' }
             ].map(feature => (
               <Link key={feature.label} to={feature.to} className="flex items-center justify-between rounded-lg px-3 py-2.5 transition hover:bg-surface-2">
                 <span className="flex items-center gap-2.5 text-sm"><span className="text-muted">{feature.icon}</span>{feature.label}</span>

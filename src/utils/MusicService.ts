@@ -11,7 +11,7 @@ const execFileAsync = promisify(execFile);
 export const MUSIC_COMMANDS = new Set([
   'play', 'skip', 'stop', 'queue', 'loop', 'pause', 'volume',
   'shuffle', 'autoplay', 'nowplaying', 'search', 'clearqueue',
-  'filter', 'seek', 'jump', 'move', 'remove', 'previous'
+  'filter', 'seek', 'jump', 'move', 'remove', 'previous', 'playlist', 'history'
 ]);
 
 export type MusicSource =
@@ -115,10 +115,11 @@ export function formatDuration(ms: number): string {
   return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 }
 
-export function toQueueTrack(track: Track, requestedBy: string): QueueTrack {
+export function toQueueTrack(track: Track, requestedBy: string, requestedById?: string): QueueTrack {
   return {
     track,
     requestedBy,
+    requestedById,
     title: track.info.title,
     uri: track.info.uri || '',
     duration: track.info.length
@@ -807,6 +808,7 @@ async function tryFallbackPlayback(client: Client, queue: MusicQueue, failedTrac
     const recoveredTrack: QueueTrack = {
       track: candidate,
       requestedBy: failedTrack.requestedBy,
+      requestedById: failedTrack.requestedById,
       title: failedTrack.title || candidate.info.title,
       uri: failedTrack.uri || candidate.info.uri || '',
       duration: candidate.info.length || failedTrack.duration
@@ -824,6 +826,7 @@ async function tryFallbackPlayback(client: Client, queue: MusicQueue, failedTrac
       queue.current = {
         track: ytdlpTrack,
         requestedBy: failedTrack.requestedBy,
+        requestedById: failedTrack.requestedById,
         title: failedTrack.title,
         uri: failedTrack.uri,
         duration: ytdlpTrack.info.length || failedTrack.duration
@@ -846,7 +849,10 @@ export function attachPlayerEvents(client: Client, guildId: string, queue: Music
 
   const retriedTracks = new Set<string>();
 
-  player.on('start', () => botEvents.emit('music', guildId));
+  player.on('start', () => {
+    if (queue.current) client.musicHistory.record(guildId, queue.current);
+    botEvents.emit('music', guildId);
+  });
 
   player.on('end', async (event) => {
     // "replaced" fires when /previous, /jump or the panel start another track directly,

@@ -2,9 +2,12 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { NavLink, useLocation } from 'react-router';
 import {
   AudioWaveform,
+  BarChart3,
   Bell,
+  Cake,
   Command,
   FileText,
+  ListMusic,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -17,6 +20,8 @@ import {
   Settings,
   Smile,
   Sun,
+  Vote,
+  Wrench,
   Wifi,
   WifiOff,
   X
@@ -37,8 +42,12 @@ const NAV = [
     label: 'Features',
     items: [
       { to: '/music', label: 'Music', icon: Music },
+      { to: '/playlists', label: 'Playlists', icon: ListMusic },
+      { to: '/music/stats', label: 'Music stats', icon: BarChart3 },
       { to: '/pinboard', label: 'Pinboard', icon: Pin },
-      { to: '/reminders', label: 'Reminders', icon: Bell }
+      { to: '/reminders', label: 'Reminders', icon: Bell },
+      { to: '/birthdays', label: 'Birthdays', icon: Cake },
+      { to: '/polls', label: 'Polls', icon: Vote }
     ]
   },
   {
@@ -56,6 +65,7 @@ const NAV = [
     items: [
       { to: '/lavalink', label: 'Lavalink', icon: AudioWaveform },
       { to: '/logs', label: 'Logs & Activity', icon: FileText },
+      { to: '/maintenance', label: 'Maintenance', icon: Wrench },
       { to: '/settings', label: 'Settings', icon: Settings }
     ]
   }
@@ -88,7 +98,7 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
                 <NavLink
                   key={item.to}
                   to={item.to}
-                  end={item.to === '/'}
+                  end={item.to === '/' || item.to === '/music'}
                   onClick={onNavigate}
                   className={({ isActive }) => cn(
                     'flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition',

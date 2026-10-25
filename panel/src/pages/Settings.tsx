@@ -50,6 +50,15 @@ function FeaturesCard({ settings }: { settings: BotSettings }) {
         <SettingRow title="Reminders" description="The /remind command (existing reminders are still delivered)">
           <Switch checked={features.reminders} onChange={(reminders) => update({ reminders })} label="Reminders" />
         </SettingRow>
+        <SettingRow title="Birthdays" description="The /birthday command and the daily birthday messages">
+          <Switch checked={features.birthdays} onChange={(birthdays) => update({ birthdays })} label="Birthdays" />
+        </SettingRow>
+        <SettingRow title="Polls" description="The /poll command (running polls still end on time)">
+          <Switch checked={features.polls} onChange={(polls) => update({ polls })} label="Polls" />
+        </SettingRow>
+        <SettingRow title="Music history" description="Record every played song for the music stats and /history">
+          <Switch checked={features.musicHistory} onChange={(musicHistory) => update({ musicHistory })} label="Music history" />
+        </SettingRow>
         <SettingRow
           title={<span className="flex items-center gap-2">Full member list <Badge tone="warning">Restart required</Badge></span>}
           description={

@@ -143,7 +143,7 @@ export const registerMusicRoutes: RouteRegistrar = (app, ctx) => {
       shardId: guild.shardId,
       voiceChannelId: voiceChannel.id,
       textChannelId,
-      tracks: tracks.map(track => toQueueTrack(track, `${user.username} (panel)`))
+      tracks: tracks.map(track => toQueueTrack(track, `${user.username} (panel)`, user.id))
     });
 
     const added = resolved.playlistName ? `${tracks.length} tracks from ${resolved.playlistName}` : tracks[0].info.title;

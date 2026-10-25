@@ -4,6 +4,9 @@ import { DatabaseSync } from 'node:sqlite';
 
 const DATA_DIR = path.join(process.cwd(), 'data');
 export const DATABASE_PATH = path.join(DATA_DIR, 'luko.db');
+export const BACKUP_DIR = path.join(DATA_DIR, 'backups');
+// Written by the panel to restore a backup; applied on the next start, before the database is opened.
+export const RESTORE_MARKER = path.join(DATA_DIR, 'restore-pending.json');
 
 const SCHEMA = `
   CREATE TABLE IF NOT EXISTS meta (
@@ -86,6 +89,80 @@ const SCHEMA = `
     action TEXT NOT NULL,
     details TEXT
   );
+
+  CREATE TABLE IF NOT EXISTS birthdays (
+    guild_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    user_name TEXT,
+    day INTEGER NOT NULL,
+    month INTEGER NOT NULL,
+    year INTEGER,
+    PRIMARY KEY (guild_id, user_id)
+  );
+
+  CREATE TABLE IF NOT EXISTS polls (
+    id TEXT PRIMARY KEY,
+    guild_id TEXT,
+    channel_id TEXT NOT NULL,
+    message_id TEXT,
+    question TEXT NOT NULL,
+    options TEXT NOT NULL,
+    multiple INTEGER NOT NULL,
+    anonymous INTEGER NOT NULL,
+    creator_id TEXT NOT NULL,
+    creator_name TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    ends_at INTEGER,
+    ended_at INTEGER
+  );
+  CREATE INDEX IF NOT EXISTS polls_open ON polls (ended_at, ends_at);
+
+  CREATE TABLE IF NOT EXISTS poll_votes (
+    poll_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    option INTEGER NOT NULL,
+    voted_at INTEGER NOT NULL,
+    PRIMARY KEY (poll_id, user_id, option)
+  );
+
+  CREATE TABLE IF NOT EXISTS music_plays (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    guild_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    author TEXT,
+    uri TEXT,
+    source TEXT,
+    duration INTEGER NOT NULL,
+    artwork_url TEXT,
+    requested_by TEXT,
+    requested_by_id TEXT,
+    played_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS music_plays_t ON music_plays (played_at);
+  CREATE INDEX IF NOT EXISTS music_plays_guild ON music_plays (guild_id, played_at);
+
+  CREATE TABLE IF NOT EXISTS playlists (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+    owner_id TEXT NOT NULL,
+    owner_name TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+
+  -- "track" is the Lavalink track as JSON, so a saved song plays without searching again.
+  CREATE TABLE IF NOT EXISTS playlist_tracks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    playlist_id INTEGER NOT NULL,
+    position INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    author TEXT,
+    uri TEXT,
+    duration INTEGER NOT NULL,
+    artwork_url TEXT,
+    track TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS playlist_tracks_list ON playlist_tracks (playlist_id, position);
 
   CREATE TABLE IF NOT EXISTS panel_sessions (
     token_hash TEXT PRIMARY KEY,
@@ -271,8 +348,30 @@ function migratePinboardTable(db: DatabaseSync): void {
   });
 }
 
+function applyPendingRestore(): void {
+  if (!fs.existsSync(RESTORE_MARKER)) return;
+
+  try {
+    const { name } = JSON.parse(fs.readFileSync(RESTORE_MARKER, 'utf-8')) as { name: string };
+    const source = path.join(BACKUP_DIR, path.basename(name));
+    if (!fs.existsSync(source)) {
+      console.error(`❌ Could not restore backups/${name}: the file is gone. Starting with the current database.`);
+      return;
+    }
+    // The write-ahead log belongs to the database being replaced.
+    for (const suffix of ['-wal', '-shm']) fs.rmSync(DATABASE_PATH + suffix, { force: true });
+    fs.copyFileSync(source, DATABASE_PATH);
+    console.log(`🗄️ Restored the database from data/backups/${name}.`);
+  } catch (error) {
+    console.error('❌ Restoring the backup failed. Starting with the current database:', error);
+  } finally {
+    fs.rmSync(RESTORE_MARKER, { force: true });
+  }
+}
+
 function openDatabase(): DatabaseSync {
   fs.mkdirSync(DATA_DIR, { recursive: true });
+  applyPendingRestore();
 
   const db = new DatabaseSync(DATABASE_PATH);
   db.exec('PRAGMA journal_mode = WAL;');

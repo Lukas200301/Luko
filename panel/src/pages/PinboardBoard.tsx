@@ -35,7 +35,7 @@ import { EmojiPreview, emojiName } from '../components/EmojiPicker';
 import { EntryAvatar, EntryCard, EntryDialog, EntrySkeletons } from '../components/PinboardEntries';
 import { DiscordText } from '../components/DiscordText';
 
-const PinsTimelineChart = lazy(() => import('../components/PinsTimelineChart').then(m => ({ default: m.PinsTimelineChart })));
+const TimelineChart = lazy(() => import('../components/TimelineChart').then(m => ({ default: m.TimelineChart })));
 
 const PAGE_SIZE = 25;
 
@@ -353,7 +353,7 @@ export function PinboardBoardPage() {
                 {s.timeline.length === 0 || s.pins === 0 ? (
                   <EmptyState icon={<BarChart3 className="size-5" />} title="No pins in this time range" />
                 ) : (
-                  <Suspense fallback={<PageLoader />}><PinsTimelineChart data={s.timeline} metric={chartMetric} /></Suspense>
+                  <Suspense fallback={<PageLoader />}><TimelineChart data={s.timeline} dataKey={chartMetric} name={chartMetric === 'pins' ? 'Pins' : 'Reactions'} /></Suspense>
                 )}
               </CardBody>
             </Card>

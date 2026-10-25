@@ -4,6 +4,8 @@ import { Track } from 'shoukaku';
 export interface QueueTrack {
   track: Track;
   requestedBy: string;
+  // Discord ID of the requester (missing for autoplay).
+  requestedById?: string;
   title: string;
   uri: string;
   duration: number;

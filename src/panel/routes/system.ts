@@ -6,6 +6,7 @@ import { logManager } from '../../utils/LogManager';
 import { botEvents } from '../../utils/botEvents';
 import { isMusicAvailable } from '../../utils/MusicService';
 import { DATABASE_PATH } from '../../utils/Database';
+import { getHostInfo } from '../../utils/HostInfo';
 
 // package.json sits three folders up from both src/panel/routes and dist/panel/routes.
 const { version: BOT_VERSION } = require('../../../package.json') as { version: string };
@@ -62,6 +63,7 @@ export function buildOverview(client: Client): Overview {
       cpuPercent: client.stats.getCpuPercent()
     },
     features: settings.features,
+    host: getHostInfo(),
     maintenance: settings.maintenance.enabled,
     musicAvailable: isMusicAvailable(client),
     musicRestartRequired: settings.features.music && !client.shoukaku,
@@ -109,6 +111,15 @@ export const registerSystemRoutes: RouteRegistrar = (app, ctx) => {
     audit(ctx, request, 'Restarted the bot');
     console.log('🔄 Restart requested from the admin panel');
     setTimeout(() => process.exit(0), 750);
+    return { ok: true };
+  });
+
+  app.post('/alerts/test', async (request) => {
+    if (!client.settings.get().alerts.enabled) throw new PanelError(400, 'Turn alerts on first.');
+    if (!process.env.OWNER_ID) throw new PanelError(400, 'OWNER_ID is not set in .env, so the bot does not know who to message.');
+    const sent = await client.alerts.send('test', '🔔 Test alert', 'Alerts work. You get a message like this when something needs your attention.');
+    if (!sent) throw new PanelError(502, "The message could not be delivered. Check that you share a server with the bot and allow DMs from server members.");
+    audit(ctx, request, 'Sent a test alert');
     return { ok: true };
   });
 
