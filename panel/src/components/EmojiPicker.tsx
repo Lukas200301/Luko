@@ -12,9 +12,16 @@ export function EmojiPreview({ value, className }: { value: string; className?: 
   useEffect(() => setFailed(false), [value]);
 
   if (!value.trim()) return <Smile className={cn('size-5 text-muted', className)} />;
-  if (url && !failed) return <img src={url} alt="" onError={() => setFailed(true)} className={cn('size-6 object-contain', className)} />;
+  if (url && !failed) return <img src={url} alt="" onError={() => setFailed(true)} className={cn('size-6 shrink-0 object-contain', className)} />;
   if (url) return <span className={cn('text-xs text-muted', className)}>?</span>;
-  return <span className={cn('text-xl leading-none', className)}>{value}</span>;
+  // Size classes are meant for images; a text emoji keeps its natural width but never overflows.
+  return <span className={cn('inline-block max-w-16 shrink-0 overflow-hidden text-xl leading-none whitespace-nowrap', className, 'h-auto w-auto')}>{value}</span>;
+}
+
+// ":name:" for a custom emoji ("<:name:id>"), nothing for Unicode emojis.
+export function emojiName(display: string): string {
+  const match = /^<a?:(\w+):\d+>$/.exec(display.trim());
+  return match ? `:${match[1]}:` : '';
 }
 
 function EmojiGrid({ emojis, selected, onSelect, extra }: {

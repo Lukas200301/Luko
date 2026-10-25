@@ -1,13 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, useParams } from 'react-router';
-import { ArrowLeft, ArrowRight, RotateCw, ChevronDown, ExternalLink, Hash, Pin, Plus, Save, Smile, Trash2, X } from 'lucide-react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Link } from 'react-router';
+import { ArrowRight, ChevronDown, Hash, Pin, Plus, Save, Smile, Trash2, X } from 'lucide-react';
 import { api } from '../lib/api';
 import { useSaveSettings, useSettings } from '../lib/settings';
-import { cn, timeAgo } from '../lib/utils';
-import type { GuildDetail, PinboardBoard, PinboardBoardStatus, PinboardEntry, PinboardEntryPage } from '../lib/types';
+import { cn } from '../lib/utils';
+import type { GuildDetail, PinboardBoard, PinboardBoardStatus, PinboardEntry } from '../lib/types';
 import {
-  Avatar,
   Badge,
   Button,
   Card,
@@ -20,14 +19,13 @@ import {
   PageHeader,
   PageLoader,
   SettingRow,
-  Spinner,
   Switch,
-  useConfirm,
-  useToast
+  useConfirm
 } from '../components/ui';
 import { ChannelSelect, GuildSelect, useChannels } from '../components/pickers';
 import { EmojiPicker } from '../components/EmojiPicker';
 import { BotEmojis } from '../components/BotEmojis';
+import { EntryCard, EntryDialog } from '../components/PinboardEntries';
 
 interface PinboardResponse {
   enabled: boolean;
@@ -35,8 +33,6 @@ interface PinboardResponse {
   recent: PinboardEntry[];
   total: number;
 }
-
-const PAGE_SIZE = 25;
 
 function newBoard(): PinboardBoard {
   return {
@@ -243,84 +239,16 @@ function BoardEditor({ status, isNew, onSave, onDelete, saving }: {
   );
 }
 
-function useRemoveEntry() {
-  const toast = useToast();
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (entry: PinboardEntry) => api.delete(`/api/pinboard/entries/${entry.boardId}/${entry.originalMessageId}`),
-    onSuccess: () => {
-      toast.success('Removed from the pinboard');
-      queryClient.invalidateQueries({ queryKey: ['pinboard'] });
-      queryClient.invalidateQueries({ queryKey: ['pinboard-entries'] });
-    },
-    onError: (error) => toast.error(error)
-  });
-}
-
-function EntryCard({ entry, board, showBoard }: { entry: PinboardEntry; board?: PinboardBoardStatus; showBoard?: boolean }) {
-  const confirm = useConfirm();
-  const remove = useRemoveEntry();
-  const url = board ? `https://discord.com/channels/${board.guildId}/${board.channelId}/${entry.pinboardMessageId}` : null;
-
-  return (
-    <div className="flex flex-col rounded-xl border border-border bg-surface-2/50 p-4">
-      <div className="mb-2 flex items-center gap-2">
-        <Avatar src={entry.authorAvatarUrl} name={entry.authorName ?? '?'} className="size-7" />
-        <div className="min-w-0 flex-1 truncate text-sm font-medium">{entry.authorName ?? 'Unknown author'}</div>
-        {entry.count !== undefined && <Badge tone="warning">★ {entry.count}</Badge>}
-      </div>
-      {entry.excerpt ? (
-        <p className="line-clamp-4 text-sm break-words text-fg/90">{entry.excerpt}</p>
-      ) : (
-        <p className="text-xs text-muted italic">{entry.imageUrl ? 'Image' : entry.authorName ? 'No text' : 'Preview not loaded yet'}</p>
-      )}
-      {entry.imageUrl && <img src={entry.imageUrl} alt="" loading="lazy" className="mt-2 max-h-40 w-full rounded-lg object-cover" />}
-      <div className="mt-auto flex items-center justify-between gap-2 pt-3 text-xs text-muted">
-        <span className="truncate">{showBoard && `${board?.name ?? 'Deleted board'} · `}{entry.pinnedAt ? timeAgo(entry.pinnedAt) : ''}</span>
-        <div className="flex shrink-0 gap-1">
-          {url && <a href={url} target="_blank" rel="noreferrer"><Button variant="ghost" size="sm"><ExternalLink className="size-3.5" />Open</Button></a>}
-          <Button
-            variant="ghost"
-            size="sm"
-            loading={remove.isPending}
-            onClick={async () => {
-              if (await confirm({ title: 'Remove from pinboard?', description: 'The pinboard post is deleted. The original message stays.', confirmLabel: 'Remove', danger: true })) {
-                remove.mutate(entry);
-              }
-            }}
-          >
-            {!remove.isPending && <Trash2 className="size-3.5" />}Remove
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function EntrySkeletons({ count }: { count: number }) {
-  return (
-    <>
-      {Array.from({ length: count }, (_, i) => (
-        <div key={i} className="flex animate-pulse flex-col gap-3 rounded-xl border border-border bg-surface-2/50 p-4">
-          <div className="flex items-center gap-2"><div className="size-7 rounded-full bg-border" /><div className="h-3 w-28 rounded bg-border" /></div>
-          <div className="h-3 w-full rounded bg-border" />
-          <div className="h-3 w-4/5 rounded bg-border" />
-          <div className="mt-2 h-3 w-16 rounded bg-border" />
-        </div>
-      ))}
-    </>
-  );
-}
-
 function RecentPinned({ data }: { data: PinboardResponse }) {
   const boardsById = useMemo(() => new Map(data.boards.map(b => [b.id, b])), [data.boards]);
+  const [opened, setOpened] = useState<PinboardEntry | null>(null);
 
   return (
     <Card>
       <CardHeader
         title="Latest pinned messages"
         description={data.total > data.recent.length
-          ? `The newest ${data.recent.length} of ${data.total.toLocaleString()}. Open a pinboard's "Pinned messages" to see all of them.`
+          ? `The newest ${data.recent.length} of ${data.total.toLocaleString()}. Open a pinboard's "Pinned messages" for all of them and statistics.`
           : 'Newest first, across all pinboards'}
         icon={<Pin className="size-4" />}
       />
@@ -329,78 +257,12 @@ function RecentPinned({ data }: { data: PinboardResponse }) {
       ) : (
         <div className="grid gap-4 p-5 sm:grid-cols-2 xl:grid-cols-3">
           {data.recent.map(entry => (
-            <EntryCard key={`${entry.boardId}:${entry.originalMessageId}`} entry={entry} board={boardsById.get(entry.boardId)} showBoard={data.boards.length > 1} />
+            <EntryCard key={`${entry.boardId}:${entry.originalMessageId}`} entry={entry} board={boardsById.get(entry.boardId)} showBoard={data.boards.length > 1} onOpen={setOpened} />
           ))}
         </div>
       )}
+      <EntryDialog entry={opened} board={opened ? boardsById.get(opened.boardId) : undefined} onClose={() => setOpened(null)} />
     </Card>
-  );
-}
-
-// All pinned messages of one pinboard, loaded 25 at a time.
-export function PinboardBoardPage() {
-  const { boardId = '' } = useParams();
-  const { data: overview } = useQuery({ queryKey: ['pinboard'], queryFn: () => api.get<PinboardResponse>('/api/pinboard') });
-  const board = overview?.boards.find(b => b.id === boardId);
-
-  const query = useInfiniteQuery({
-    queryKey: ['pinboard-entries', boardId],
-    queryFn: ({ pageParam }) => api.get<PinboardEntryPage>(`/api/pinboard/boards/${boardId}/entries?offset=${pageParam}&limit=${PAGE_SIZE}`),
-    initialPageParam: 0,
-    getNextPageParam: (last) => (last.offset + last.entries.length < last.total ? last.offset + last.entries.length : undefined)
-  });
-
-  const entries = query.data?.pages.flatMap(p => p.entries) ?? [];
-  const total = query.data?.pages[0]?.total ?? board?.entryCount ?? 0;
-
-  return (
-    <div className="space-y-6">
-      <Link to="/pinboard" className="inline-flex items-center gap-1.5 text-sm text-muted hover:text-fg"><ArrowLeft className="size-4" />All pinboards</Link>
-
-      <PageHeader
-        title={board ? `${board.name} · pinned messages` : 'Pinned messages'}
-        description={board
-          ? [board.guildName ?? 'Unknown server', board.channelName ? `#${board.channelName}` : null, `${total.toLocaleString()} pinned`].filter(Boolean).join(' · ')
-          : undefined}
-      />
-
-      {board && !board.botInGuild && (
-        <Notice tone="warning">The running bot isn't in this server, so previews of older posts can't be loaded.</Notice>
-      )}
-
-      {query.isError ? (
-        <Notice tone="danger" title="Couldn't load the pinned messages">
-          {query.error instanceof Error ? query.error.message : 'Unknown error'}
-          <span className="mt-2 block"><Button size="sm" variant="secondary" onClick={() => query.refetch()}><RotateCw className="size-3.5" />Try again</Button></span>
-        </Notice>
-      ) : query.isLoading ? (
-        <Card>
-          <div className="flex items-center gap-2 border-b border-border px-5 py-3 text-sm text-muted">
-            <Spinner className="size-4" />Loading pinned messages… Missing previews are read from Discord, which can take a moment.
-          </div>
-          <div className="grid gap-4 p-5 sm:grid-cols-2 xl:grid-cols-3"><EntrySkeletons count={6} /></div>
-        </Card>
-      ) : entries.length === 0 ? (
-        <Card><EmptyState icon={<Pin className="size-5" />} title="No pinned messages yet" description="Messages appear here once they reach the reaction threshold." /></Card>
-      ) : (
-        <Card>
-          <div className="grid gap-4 p-5 sm:grid-cols-2 xl:grid-cols-3">
-            {entries.map(entry => <EntryCard key={entry.originalMessageId} entry={entry} board={board} />)}
-            {query.isFetchingNextPage && <EntrySkeletons count={3} />}
-          </div>
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-5 py-3 text-sm">
-            <span className="text-muted">Showing {entries.length.toLocaleString()} of {total.toLocaleString()}</span>
-            {query.hasNextPage ? (
-              <Button variant="secondary" onClick={() => query.fetchNextPage()} loading={query.isFetchingNextPage}>
-                {query.isFetchingNextPage ? 'Loading…' : `Load ${Math.min(PAGE_SIZE, total - entries.length)} more`}
-              </Button>
-            ) : (
-              <span className="text-xs text-muted">All pinned messages loaded</span>
-            )}
-          </div>
-        </Card>
-      )}
-    </div>
   );
 }
 

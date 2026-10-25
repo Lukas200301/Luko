@@ -315,6 +315,43 @@ export interface PinboardEntry {
   imageUrl?: string;
   count?: number;
   pinnedAt?: number;
+  // Full message text; undefined until the message was stored or read back from Discord.
+  content?: string;
+  authorId?: string;
+  // The emoji with the most counted reactions, as key (ID or Unicode) and display text.
+  emoji?: string;
+  emojiDisplay?: string;
+  messageCreatedAt?: number;
+  channelName?: string | null;
+}
+
+export interface PinboardReaction {
+  emoji: string;
+  display: string;
+  count: number;
+}
+
+export interface PinboardEntryDetail extends PinboardEntry {
+  reactions: PinboardReaction[];
+}
+
+export type PinboardRange = '7d' | '30d' | '90d' | '365d' | 'all';
+export type PinboardSort = 'newest' | 'oldest' | 'reactions' | 'message';
+
+export interface PinboardStats {
+  range: PinboardRange;
+  pins: number;
+  reactions: number;
+  averageReactions: number;
+  maxReactions: number;
+  pinsLast7Days: number;
+  pinsLast30Days: number;
+  timeline: { label: string; start: number; pins: number; reactions: number }[];
+  emojis: { emoji: string; display: string; pins: number; reactions: number }[];
+  authors: { key: string; name: string; avatarUrl: string | null; pins: number; reactions: number }[];
+  channels: { channelId: string; name: string | null; pins: number; reactions: number }[];
+  top: PinboardEntry[];
+  backfill: { pending: number; running: boolean; done: number; total: number };
 }
 
 export interface ReminderInfo {

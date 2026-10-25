@@ -50,7 +50,7 @@ export function emojiImageUrl(value: string): string | null {
   if (/^\d{15,25}$/.test(trimmed)) {
     return `https://cdn.discordapp.com/emojis/${trimmed}.webp?size=48`;
   }
-  const match = /^<(a?):\w+:(\d{15,25})>$/.exec(trimmed);
+  const match = /^<(a?):\w+:(\d+)>$/.exec(trimmed);
   if (match) {
     return `https://cdn.discordapp.com/emojis/${match[2]}.${match[1] ? 'gif' : 'webp'}?size=48`;
   }

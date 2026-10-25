@@ -37,10 +37,28 @@ const SCHEMA = `
     image_url TEXT,
     count INTEGER,
     pinned_at INTEGER,
+    content TEXT,
+    author_id TEXT,
+    emoji TEXT,
+    emoji_display TEXT,
+    message_created_at INTEGER,
+    updated_at INTEGER,
     PRIMARY KEY (board_id, original_message_id)
   );
   CREATE INDEX IF NOT EXISTS pinboard_board_pinned ON pinboard (board_id, pinned_at);
   CREATE INDEX IF NOT EXISTS pinboard_pinned ON pinboard (pinned_at);
+  CREATE INDEX IF NOT EXISTS pinboard_board_count ON pinboard (board_id, count);
+
+  -- Every counted emoji of a pinned message with its reaction count (for stats and filtering).
+  CREATE TABLE IF NOT EXISTS pinboard_reactions (
+    board_id TEXT NOT NULL,
+    original_message_id TEXT NOT NULL,
+    emoji TEXT NOT NULL,
+    display TEXT NOT NULL,
+    count INTEGER NOT NULL,
+    PRIMARY KEY (board_id, original_message_id, emoji)
+  );
+  CREATE INDEX IF NOT EXISTS pinboard_reactions_emoji ON pinboard_reactions (board_id, emoji, count);
 
   CREATE TABLE IF NOT EXISTS command_stats (
     command TEXT PRIMARY KEY,
@@ -191,6 +209,32 @@ function importLegacyJson(db: DatabaseSync): void {
   }
 }
 
+// Columns added to the pinboard table after its first version.
+const PINBOARD_COLUMNS: [string, string][] = [
+  ['content', 'TEXT'],
+  ['author_id', 'TEXT'],
+  ['emoji', 'TEXT'],
+  ['emoji_display', 'TEXT'],
+  ['message_created_at', 'INTEGER'],
+  ['updated_at', 'INTEGER']
+];
+
+function addPinboardColumns(db: DatabaseSync): void {
+  const existing = new Set((db.prepare('PRAGMA table_info(pinboard)').all() as Array<{ name: string }>).map(c => c.name));
+  for (const [name, type] of PINBOARD_COLUMNS) {
+    if (!existing.has(name)) db.exec(`ALTER TABLE pinboard ADD COLUMN ${name} ${type}`);
+  }
+}
+
+// A Discord ID contains the time it was created, so every pin knows its message date.
+function fillMessageDates(db: DatabaseSync): void {
+  db.exec(`
+    UPDATE pinboard
+    SET message_created_at = (CAST(original_message_id AS INTEGER) >> 22) + 1420070400000
+    WHERE message_created_at IS NULL
+  `);
+}
+
 // Databases created by the first SQLite version keyed pinboard entries by message only.
 function migratePinboardTable(db: DatabaseSync): void {
   const columns = db.prepare('PRAGMA table_info(pinboard)').all() as Array<{ name: string }>;
@@ -228,8 +272,12 @@ function openDatabase(): DatabaseSync {
   db.exec('PRAGMA synchronous = NORMAL;');
   // Convert an older pinboard table first; CREATE TABLE IF NOT EXISTS would otherwise keep the old shape.
   const hasPinboard = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'pinboard'").get();
-  if (hasPinboard) migratePinboardTable(db);
+  if (hasPinboard) {
+    migratePinboardTable(db);
+    addPinboardColumns(db);
+  }
   db.exec(SCHEMA);
+  fillMessageDates(db);
 
   const alreadyImported = db.prepare("SELECT value FROM meta WHERE key = 'json_imported'").get();
   if (!alreadyImported) {

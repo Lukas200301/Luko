@@ -8,7 +8,8 @@ import {
   PartialUser,
   User
 } from 'discord.js';
-import { PinboardBoard, PinboardEmoji } from '../shared/types';
+import { PinboardBoard, PinboardEmoji, PinboardReaction } from '../shared/types';
+import { startAllBackfills } from './PinboardBackfill';
 
 interface QualifyingReaction {
   reaction: MessageReaction;
@@ -38,21 +39,26 @@ async function reactionCount(board: PinboardBoard, reaction: MessageReaction, me
   return count;
 }
 
-// Picks the reaction with the most votes among those that reached their threshold.
-async function bestReaction(board: PinboardBoard, message: Message): Promise<QualifyingReaction | null> {
-  let best: QualifyingReaction | null = null;
-
+// All reactions that count on this board, with their counts.
+async function countedReactions(board: PinboardBoard, message: Message): Promise<QualifyingReaction[]> {
+  const counted: QualifyingReaction[] = [];
   for (const reaction of message.reactions.cache.values()) {
     const config = emojiConfig(board, reaction);
     if (!config) continue;
+    counted.push({ reaction, config, count: await reactionCount(board, reaction, message) });
+  }
+  return counted;
+}
 
-    const count = await reactionCount(board, reaction, message);
-    const threshold = config.threshold ?? board.threshold;
-    if (count >= threshold && (!best || count > best.count)) {
-      best = { reaction, config, count };
+// Picks the reaction with the most votes among those that reached their threshold.
+function bestReaction(board: PinboardBoard, counted: QualifyingReaction[]): QualifyingReaction | null {
+  let best: QualifyingReaction | null = null;
+  for (const candidate of counted) {
+    const threshold = candidate.config.threshold ?? board.threshold;
+    if (candidate.count >= threshold && (!best || candidate.count > best.count)) {
+      best = candidate;
     }
   }
-
   return best;
 }
 
@@ -109,7 +115,8 @@ async function updateBoard(client: Client, board: PinboardBoard, message: Messag
   if (!targetChannel?.isTextBased() || !('messages' in targetChannel) || !targetChannel.isSendable()) return;
 
   const existingId = client.pinboardManager.getPinboardMessageId(board.id, message.id);
-  const best = await bestReaction(board, message);
+  const counted = await countedReactions(board, message);
+  const best = bestReaction(board, counted);
 
   if (!best) {
     if (existingId) {
@@ -123,18 +130,27 @@ async function updateBoard(client: Client, board: PinboardBoard, message: Messag
   const topText = `${displayEmoji(best)} **${best.count}** <#${message.channel.id}>`;
   const metadata = {
     channelId: message.channel.id,
+    authorId: message.author?.id,
     authorName: message.author?.displayName || message.author?.tag || 'Unknown User',
     authorAvatarUrl: message.author?.displayAvatarURL() || undefined,
     excerpt: (message.content || '').slice(0, 300),
+    content: message.content || '',
     imageUrl: imageUrl || undefined,
-    count: best.count
+    count: best.count,
+    emoji: emojiKey(best.reaction) ?? undefined,
+    emojiDisplay: displayEmoji(best),
+    messageCreatedAt: message.createdTimestamp
   };
+  const reactions: PinboardReaction[] = counted
+    .filter(c => c.count > 0)
+    .map(c => ({ emoji: emojiKey(c.reaction) ?? '?', display: displayEmoji(c), count: c.count }));
 
   if (existingId) {
     try {
       const pinboardMsg = await targetChannel.messages.fetch(existingId);
       await pinboardMsg.edit({ content: topText, embeds: [embed] });
       client.pinboardManager.setPinboardMessageId(board.id, message.id, existingId, metadata);
+      client.pinboardManager.setReactions(board.id, message.id, reactions);
       return;
     } catch {
       // The pinboard post was deleted by hand; post it again below.
@@ -143,6 +159,7 @@ async function updateBoard(client: Client, board: PinboardBoard, message: Messag
 
   const newMsg = await targetChannel.send({ content: topText, embeds: [embed] });
   client.pinboardManager.setPinboardMessageId(board.id, message.id, newMsg.id, metadata);
+  client.pinboardManager.setReactions(board.id, message.id, reactions);
 }
 
 export async function refreshPinboards(client: Client, partialMessage: Message | PartialMessage): Promise<void> {
@@ -186,4 +203,10 @@ export function registerPinboard(client: Client): void {
   client.on('messageReactionRemove', (reaction, user) => handlePinboardReaction(client, reaction, user));
   client.on('messageReactionRemoveAll', (message) => refreshPinboards(client, message));
   client.on('messageReactionRemoveEmoji', (reaction) => refreshPinboards(client, reaction.message));
+
+  // Store the full message of pins made by older versions, once, in the background.
+  client.once('clientReady', () => setTimeout(() => startAllBackfills(client), 15_000));
+  client.settings.on('change', (section: string) => {
+    if (section === 'pinboard' && client.isReady()) startAllBackfills(client);
+  });
 }

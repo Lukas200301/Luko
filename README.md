@@ -122,7 +122,7 @@ Luko comes with a web admin panel that runs inside the bot on port **5000**. It 
 
 - **Dashboard** - live status, uptime, ping, memory/CPU charts, Lavalink health, recent errors
 - **Music** - live player for every server: pause, skip, seek, volume, loop, filters, autoplay, drag-and-drop queue, search and add songs, start a session from the browser
-- **Pinboard** - any number of pinboards across servers, each with its own channel, emojis, reactions needed (per board and per emoji), ignored channels and options; browse and remove pinned messages
+- **Pinboard** - any number of pinboards across servers, each with its own channel, emojis, reactions needed (per board and per emoji), ignored channels and options; per-board statistics (pins over time, emojis, top authors and channels, record pins) and a searchable list sortable by date or reactions and filterable by emoji, author and channel
 - **Emojis** - upload, rename and delete the bot's own (application) emojis, usable in every server
 - **Reminders** - see, create and delete all reminders, picking the user from the server's member list
 - **Servers** - server details, channels, roles, emojis, bot permissions, bot nickname, per-server command toggles, leave server

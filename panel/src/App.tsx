@@ -14,7 +14,7 @@ function page<K extends string, P>(load: () => Promise<Record<K, ComponentType<P
 
 const MusicPage = page(() => import('./pages/Music'), 'MusicPage');
 const PinboardPage = page(() => import('./pages/Pinboard'), 'PinboardPage');
-const PinboardBoardPage = page(() => import('./pages/Pinboard'), 'PinboardBoardPage');
+const PinboardBoardPage = page(() => import('./pages/PinboardBoard'), 'PinboardBoardPage');
 const RemindersPage = page(() => import('./pages/Reminders'), 'RemindersPage');
 const ServersPage = page(() => import('./pages/Servers'), 'ServersPage');
 const CommandsPage = page(() => import('./pages/Commands'), 'CommandsPage');
