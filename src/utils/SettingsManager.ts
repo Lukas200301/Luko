@@ -65,6 +65,9 @@ function createDefaults(): BotSettings {
         })]
         : []
     },
+    pinboardStats: {
+      posts: {}
+    },
     intents: {
       members: false
     },

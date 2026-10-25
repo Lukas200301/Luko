@@ -10,6 +10,7 @@ import {
 } from 'discord.js';
 import { PinboardBoard, PinboardEmoji, PinboardReaction } from '../shared/types';
 import { startAllBackfills } from './PinboardBackfill';
+import { startStatsSchedule } from './PinboardStatsPost';
 
 interface QualifyingReaction {
   reaction: MessageReaction;
@@ -216,7 +217,10 @@ export function registerPinboard(client: Client): void {
   client.on('messageReactionRemoveEmoji', (reaction) => refreshPinboards(client, reaction.message));
 
   // Store the full message of pins made by older versions, once, in the background.
-  client.once('clientReady', () => setTimeout(() => startAllBackfills(client), 15_000));
+  client.once('clientReady', () => {
+    setTimeout(() => startAllBackfills(client), 15_000);
+    startStatsSchedule(client);
+  });
   client.settings.on('change', (section: string) => {
     if (section === 'pinboard' && client.isReady()) startAllBackfills(client);
   });

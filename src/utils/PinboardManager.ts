@@ -346,7 +346,7 @@ export class PinboardManager {
 
     const top = (db.prepare(`
       SELECT p.* FROM pinboard p WHERE p.board_id = ? ${inRange} AND p.count IS NOT NULL
-      ORDER BY p.count DESC, p.pinned_at DESC LIMIT 5
+      ORDER BY p.count DESC, p.pinned_at DESC LIMIT 10
     `).all(...params) as unknown as PinboardRow[]).map(toEntry);
 
     const points = db.prepare(`

@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useState, type ReactNode } from 'react';
 import { Link, useParams } from 'react-router';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, BarChart3, Download, Hash, Pin, RotateCw, Search, Smile, Trophy, Users, X } from 'lucide-react';
+import { ArrowLeft, BarChart3, Download, Hash, Pin, RotateCw, Search, Send, Smile, Trophy, Users, X } from 'lucide-react';
 import { api } from '../lib/api';
 import { avatarUrl, rememberMentions } from '../lib/discord';
 import { cn } from '../lib/utils';
@@ -34,6 +34,7 @@ import {
 import { EmojiPreview, emojiName } from '../components/EmojiPicker';
 import { EntryAvatar, EntryCard, EntryDialog, EntrySkeletons } from '../components/PinboardEntries';
 import { DiscordText } from '../components/DiscordText';
+import { PinboardStatsPostDialog } from '../components/PinboardStatsPostDialog';
 
 const TimelineChart = lazy(() => import('../components/TimelineChart').then(m => ({ default: m.TimelineChart })));
 
@@ -287,6 +288,7 @@ export function PinboardBoardPage() {
   const [chartMetric, setChartMetric] = useState<'pins' | 'reactions'>('pins');
   const [opened, setOpened] = useState<PinboardEntry | null>(null);
   const [pinsOf, setPinsOf] = useState<PinsTarget | null>(null);
+  const [sharing, setSharing] = useState(false);
 
   const { data: overview } = useQuery({ queryKey: ['pinboard'], queryFn: () => api.get<Overview>('/api/pinboard').then(rememberMentions) });
   const board = overview?.boards.find(b => b.id === boardId);
@@ -321,7 +323,12 @@ export function PinboardBoardPage() {
       <PageHeader
         title={board ? board.name : 'Pinboard'}
         description={board ? [board.guildName ?? 'Unknown server', board.channelName ? `#${board.channelName}` : null].filter(Boolean).join(' · ') : undefined}
-        actions={<Tabs value={range} onChange={setRange} tabs={RANGES} />}
+        actions={
+          <>
+            {board && <Button variant="secondary" onClick={() => setSharing(true)}><Send className="size-4" />Post to Discord</Button>}
+            <Tabs value={range} onChange={setRange} tabs={RANGES} />
+          </>
+        }
       />
 
       {stats.isError ? (
@@ -400,7 +407,7 @@ export function PinboardBoardPage() {
             <Card>
               <CardHeader title="Most reactions" icon={<Trophy className="size-4" />} />
               <div className="divide-y divide-border">
-                {s.top.map((entry, i) => (
+                {s.top.slice(0, 5).map((entry, i) => (
                   <button key={entry.originalMessageId} type="button" onClick={() => setOpened(entry)} className="flex w-full items-center gap-3 px-5 py-2.5 text-left transition hover:bg-surface-2/60">
                     <span className="w-5 text-sm font-semibold text-muted tabular-nums">{i + 1}</span>
                     <EntryAvatar entry={entry} board={board} className="size-7" />
@@ -469,6 +476,7 @@ export function PinboardBoardPage() {
           onOpen={setOpened}
         />
       )}
+      {sharing && board && <PinboardStatsPostDialog board={board} onClose={() => setSharing(false)} />}
       <EntryDialog entry={opened} board={board} onClose={() => setOpened(null)} />
     </div>
   );

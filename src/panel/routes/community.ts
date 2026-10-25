@@ -2,7 +2,9 @@ import { Client, EmbedBuilder, resolveColor } from 'discord.js';
 import { RouteRegistrar, PanelError, audit, bodyOf, bool, isSnowflake, num, str } from '../context';
 import {
   DiscordMentions,
+  EmbedData,
   EmbedPayload,
+  EmbedPreviewResponse,
   EmojiInfo,
   PinboardBoard,
   PinboardBoardStatus,
@@ -12,9 +14,11 @@ import {
   PinboardRange,
   PinboardSort,
   PinboardStats,
+  PinboardStatsPost,
   ReminderInfo
 } from '../../shared/types';
 import { backfillStatus, startBackfill } from '../../utils/PinboardBackfill';
+import { buildStatsEmbed, postStats, sanitizeStatsPost, statsPostFor, storedAuthorNames } from '../../utils/PinboardStatsPost';
 import { resolveMentions, userInfo } from '../names';
 
 const RECENT_LIMIT = 25;
@@ -196,6 +200,51 @@ export const registerCommunityRoutes: RouteRegistrar = (app, ctx) => {
       backfill: backfillStatus(client, boardId),
       mentions: await mentionsOf(stats.top)
     };
+  });
+
+  // ---- Posting the statistics to Discord ----
+
+  const statsPostFrom = (board: PinboardBoard, body: Record<string, unknown>): PinboardStatsPost =>
+    sanitizeStatsPost(body, statsPostFor(client, board));
+
+  const saveStatsPost = (board: PinboardBoard, config: PinboardStatsPost) => {
+    const posts = client.settings.get().pinboardStats.posts;
+    client.settings.update('pinboardStats', { posts: { ...posts, [board.id]: config } });
+  };
+
+  app.get('/pinboard/boards/:boardId/stats-post', async (request): Promise<PinboardStatsPost> =>
+    statsPostFor(client, findBoard((request.params as { boardId: string }).boardId)));
+
+  // The embed exactly as it would be posted, with names for its mentions.
+  app.post('/pinboard/boards/:boardId/stats-post/preview', async (request): Promise<EmbedPreviewResponse> => {
+    const board = findBoard((request.params as { boardId: string }).boardId);
+    const config = statsPostFrom(board, bodyOf(request));
+    const embed = buildStatsEmbed(client, board, config) as EmbedData;
+    const texts = [embed.description, ...(embed.fields ?? []).map(f => f.value)];
+    const mentions = await resolveMentions(client, board.guildId, texts);
+    mentions.users = { ...storedAuthorNames(client, board, config.range), ...mentions.users };
+    return { embed, mentions };
+  });
+
+  app.put('/pinboard/boards/:boardId/stats-post', async (request): Promise<PinboardStatsPost> => {
+    const board = findBoard((request.params as { boardId: string }).boardId);
+    const config = statsPostFrom(board, bodyOf(request));
+    saveStatsPost(board, config);
+    audit(ctx, request, 'Saved the pinboard statistics post', board.name);
+    return config;
+  });
+
+  app.post('/pinboard/boards/:boardId/stats-post/send', async (request) => {
+    const board = findBoard((request.params as { boardId: string }).boardId);
+    const config = statsPostFrom(board, bodyOf(request));
+    saveStatsPost(board, config);
+    try {
+      const url = await postStats(client, board, config);
+      audit(ctx, request, 'Posted pinboard statistics', board.name);
+      return { ok: true, url };
+    } catch (error) {
+      throw new PanelError(400, error instanceof Error ? error.message : String(error));
+    }
   });
 
   app.post('/pinboard/boards/:boardId/backfill', async (request) => {

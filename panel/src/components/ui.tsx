@@ -308,7 +308,7 @@ export function Tabs<T extends string>({ value, onChange, tabs }: {
           onClick={() => onChange(tab.value)}
           className={cn(
             'rounded-md px-3 py-1.5 text-xs font-medium transition',
-            value === tab.value ? 'bg-surface text-fg shadow-sm' : 'text-muted hover:text-fg'
+            value === tab.value ? 'bg-surface text-fg shadow-sm ring-1 ring-border' : 'text-muted hover:text-fg'
           )}
         >
           {tab.label}

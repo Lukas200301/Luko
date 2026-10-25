@@ -40,6 +40,30 @@ export interface PinboardBoard {
   ignoreBotMessages: boolean;
 }
 
+export const PINBOARD_STATS_SECTIONS = ['totals', 'timeline', 'authors', 'channels', 'emojis', 'topPins'] as const;
+export type PinboardStatsSection = typeof PINBOARD_STATS_SECTIONS[number];
+
+export interface PinboardStatsPost {
+  channelId: string;
+  range: PinboardRange;
+  // Empty = "📌 <board name> statistics".
+  title: string;
+  description: string;
+  color: string;
+  // Shown in this order.
+  sections: PinboardStatsSection[];
+  // Entries per list (authors, channels, emojis, top pins).
+  limit: number;
+  // 'fields' = lists side by side, 'list' = everything below each other.
+  layout: 'fields' | 'list';
+  // Mention authors (shown as @name, nobody is pinged) instead of plain names.
+  mentionAuthors: boolean;
+  thumbnail: boolean;
+  schedule: 'off' | 'weekly' | 'monthly';
+  // Hour of the day (server time) for scheduled posts.
+  hour: number;
+}
+
 export interface BotSettings {
   features: {
     music: boolean;
@@ -91,6 +115,10 @@ export interface BotSettings {
   };
   pinboard: {
     boards: PinboardBoard[];
+  };
+  // How each board's statistics are posted to Discord (by board ID).
+  pinboardStats: {
+    posts: Record<string, PinboardStatsPost>;
   };
   intents: {
     // Discord's privileged "Server Members" intent. Needs to be switched on in the
@@ -731,4 +759,20 @@ export interface PlaylistTrackInfo {
 
 export interface PlaylistDetail extends PlaylistSummary {
   tracks: PlaylistTrackInfo[];
+}
+
+// An embed as the bot sends it (subset of Discord's embed object), for previews in the panel.
+export interface EmbedData {
+  title?: string;
+  description?: string;
+  color?: number;
+  fields?: { name: string; value: string; inline?: boolean }[];
+  thumbnail?: { url: string };
+  footer?: { text: string };
+  timestamp?: string;
+}
+
+export interface EmbedPreviewResponse {
+  embed: EmbedData;
+  mentions: DiscordMentions;
 }
