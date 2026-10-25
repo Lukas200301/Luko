@@ -56,12 +56,33 @@ function readEmbed(embed: Embed | undefined): PostedMessage {
   };
 }
 
+// The ID (or Unicode emoji) of an emoji as written in a post's header.
+function idOfDisplay(display: string): string {
+  return /<a?:\w+:(\d+)>/.exec(display)?.[1] ?? display;
+}
+
+// The reaction a post's header stands for. A board can show an emoji with a different one (e.g. a bot
+// emoji for a server emoji): then the header holds the shown emoji, but pins count the reaction.
+function emojiKeyForDisplay(board: PinboardBoard, display: string): string {
+  return board.emojis.find(e => e.display && e.display.trim() === display)?.emoji ?? idOfDisplay(display);
+}
+
+// Pins read back by older versions counted under the shown emoji instead of the reaction:
+// move them to the reaction's emoji so both appear as one in the statistics.
+export function mergeDisplayEmojis(client: Client, board: PinboardBoard): void {
+  for (const config of board.emojis) {
+    if (!config.display || !config.emoji) continue;
+    const shown = idOfDisplay(config.display.trim());
+    if (shown !== config.emoji) client.pinboardManager.mergeEmoji(board.id, shown, config.emoji, config.display);
+  }
+}
+
 // Reads a board's own pinboard post: "<emoji> **<count>** <#channel>" plus the embed.
-function parsePost(post: Message): PinboardMetadata & { reaction?: { emoji: string; display: string; count: number } } {
+function parsePost(post: Message, board: PinboardBoard): PinboardMetadata & { reaction?: { emoji: string; display: string; count: number } } {
   const header = /^(.*?)\s*\*\*(\d+)\*\*\s*<#(\d+)>/.exec(post.content);
   const display = header?.[1]?.trim() || undefined;
   const count = header ? Number(header[2]) : undefined;
-  const emoji = display ? (/<a?:\w+:(\d+)>/.exec(display)?.[1] ?? display) : undefined;
+  const emoji = display ? emojiKeyForDisplay(board, display) : undefined;
   const shown = readEmbed(post.embeds[0]);
 
   return {
@@ -110,7 +131,7 @@ async function fillOne(client: Client, board: PinboardBoard, channel: Fetcher, e
   }
   if (!post) return;
 
-  const { reaction, ...metadata } = parsePost(post);
+  const { reaction, ...metadata } = parsePost(post, board);
   client.pinboardManager.setPinboardMessageId(board.id, entry.originalMessageId, entry.pinboardMessageId, metadata);
   if (reaction && client.pinboardManager.getDetail(board.id, entry.originalMessageId)?.reactions.length === 0) {
     client.pinboardManager.setReactions(board.id, entry.originalMessageId, [reaction]);
@@ -253,6 +274,7 @@ export function startBackfill(client: Client, board: PinboardBoard): void {
 
 export function startAllBackfills(client: Client): void {
   for (const board of client.settings.get().pinboard.boards) {
+    mergeDisplayEmojis(client, board);
     startBackfill(client, board);
   }
 }

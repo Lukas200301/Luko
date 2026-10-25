@@ -119,6 +119,20 @@ const statements = {
   `),
   getMeta: db.prepare('SELECT value FROM meta WHERE key = ?'),
   setMeta: db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)'),
+  // Merging one emoji into another (see mergeEmoji): the higher count wins where a pin has both.
+  mergeCounts: db.prepare(`
+    UPDATE pinboard_reactions AS t
+    SET count = MAX(t.count, (SELECT f.count FROM pinboard_reactions f WHERE f.board_id = t.board_id AND f.original_message_id = t.original_message_id AND f.emoji = ?))
+    WHERE t.board_id = ? AND t.emoji = ?
+      AND EXISTS (SELECT 1 FROM pinboard_reactions f WHERE f.board_id = t.board_id AND f.original_message_id = t.original_message_id AND f.emoji = ?)
+  `),
+  dropMerged: db.prepare(`
+    DELETE FROM pinboard_reactions AS f
+    WHERE f.board_id = ? AND f.emoji = ?
+      AND EXISTS (SELECT 1 FROM pinboard_reactions t WHERE t.board_id = f.board_id AND t.original_message_id = f.original_message_id AND t.emoji = ?)
+  `),
+  renameReactions: db.prepare('UPDATE pinboard_reactions SET emoji = ?, display = ? WHERE board_id = ? AND emoji = ?'),
+  renameTopEmoji: db.prepare('UPDATE pinboard SET emoji = ?, emoji_display = ? WHERE board_id = ? AND emoji = ?'),
   moveReactions: db.prepare('UPDATE pinboard_reactions SET original_message_id = ? WHERE board_id = ? AND original_message_id = ?'),
   setAvatar: db.prepare('UPDATE pinboard SET author_avatar_url = ? WHERE author_id = ? AND author_avatar_url IS NOT ?'),
   missingContent: db.prepare('SELECT * FROM pinboard WHERE board_id = ? AND content IS NULL ORDER BY pinned_at DESC LIMIT ?'),
@@ -240,6 +254,19 @@ export class PinboardManager {
   public repostsCheckedAt(boardId: string): number {
     const row = statements.getMeta.get(`pinboard_reposts_checked:${boardId}`) as { value: string } | undefined;
     return row ? Number(row.value) : 0;
+  }
+
+  // Counts every pin stored under emoji `from` under `to` instead (shown as `display`).
+  // Returns how many reaction rows were changed.
+  public mergeEmoji(boardId: string, from: string, to: string, display: string): number {
+    let changed = 0;
+    transaction(db, () => {
+      statements.mergeCounts.run(from, boardId, to, from);
+      changed += Number(statements.dropMerged.run(boardId, from, to).changes);
+      changed += Number(statements.renameReactions.run(to, display, boardId, from).changes);
+      statements.renameTopEmoji.run(to, display, boardId, from);
+    });
+    return changed;
   }
 
   public setRepostsCheckedAt(boardId: string, time: number) {
