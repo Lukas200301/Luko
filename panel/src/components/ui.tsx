@@ -204,10 +204,22 @@ export function StatusDot({ online, className }: { online: boolean; className?: 
   );
 }
 
-export function Avatar({ src, name, className }: { src?: string | null; name: string; className?: string }) {
-  const [failed, setFailed] = useState(false);
-  if (src && !failed) {
-    return <img src={src} alt="" onError={() => setFailed(true)} className={cn('size-9 shrink-0 rounded-full object-cover', className)} />;
+// Shows `src`, then `fallbackSrc` if that fails to load, then the name's initials.
+export function Avatar({ src, fallbackSrc, name, className }: { src?: string | null; fallbackSrc?: string | null; name: string; className?: string }) {
+  const sources = [src, fallbackSrc].filter((s, i, all): s is string => !!s && all.indexOf(s) === i);
+  const [failed, setFailed] = useState<string[]>([]);
+  const current = sources.find(s => !failed.includes(s));
+  if (current) {
+    return (
+      <img
+        key={current}
+        src={current}
+        alt=""
+        loading="lazy"
+        onError={() => setFailed(f => [...f, current])}
+        className={cn('size-9 shrink-0 rounded-full object-cover', className)}
+      />
+    );
   }
   return (
     <div className={cn('flex size-9 shrink-0 items-center justify-center rounded-full bg-accent/15 text-xs font-semibold text-accent', className)}>
@@ -315,7 +327,7 @@ export function Dialog({ open, onClose, title, description, children, footer, si
   description?: ReactNode;
   children?: ReactNode;
   footer?: ReactNode;
-  size?: 'md' | 'lg';
+  size?: 'md' | 'lg' | 'xl';
 }) {
   const ref = useRef<HTMLDialogElement>(null);
 
@@ -333,7 +345,7 @@ export function Dialog({ open, onClose, title, description, children, footer, si
       onClick={(e) => { if (e.target === ref.current) onClose(); }}
       className={cn(
         'm-auto w-[calc(100%-2rem)] rounded-2xl border border-border bg-surface p-0 text-fg shadow-2xl backdrop:bg-black/60 backdrop:backdrop-blur-sm',
-        size === 'lg' ? 'max-w-2xl' : 'max-w-md'
+        size === 'xl' ? 'max-w-4xl' : size === 'lg' ? 'max-w-2xl' : 'max-w-md'
       )}
     >
       {open && (

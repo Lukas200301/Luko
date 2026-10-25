@@ -1,10 +1,12 @@
 import { Client, EmbedBuilder, resolveColor } from 'discord.js';
 import { RouteRegistrar, PanelError, audit, bodyOf, bool, isSnowflake, num, str } from '../context';
 import {
+  DiscordMentions,
   EmbedPayload,
   EmojiInfo,
   PinboardBoard,
   PinboardBoardStatus,
+  PinboardEntry,
   PinboardEntryDetail,
   PinboardEntryPage,
   PinboardRange,
@@ -13,6 +15,7 @@ import {
   ReminderInfo
 } from '../../shared/types';
 import { backfillStatus, startBackfill } from '../../utils/PinboardBackfill';
+import { resolveMentions, userInfo } from '../names';
 
 const RECENT_LIMIT = 25;
 const RANGES: PinboardRange[] = ['7d', '30d', '90d', '365d', 'all'];
@@ -84,17 +87,48 @@ export const registerCommunityRoutes: RouteRegistrar = (app, ctx) => {
 
   // ---- Pinboard ----
 
-  // Board settings plus the newest pinned messages. Kept fast: no Discord requests here.
+  // Names for the mentions in these pins, looked up in each pin's server.
+  const mentionsOf = async (entries: PinboardEntry[]): Promise<DiscordMentions> => {
+    const boards = client.settings.get().pinboard.boards;
+    const byGuild = new Map<string | undefined, string[]>();
+    for (const entry of entries) {
+      const guildId = boards.find(b => b.id === entry.boardId)?.guildId;
+      byGuild.set(guildId, [...(byGuild.get(guildId) ?? []), entry.content ?? entry.excerpt ?? '']);
+    }
+    const merged: DiscordMentions = { channels: {}, users: {}, roles: {} };
+    for (const [guildId, texts] of byGuild) {
+      const found = await resolveMentions(client, guildId, texts);
+      Object.assign(merged.channels, found.channels);
+      Object.assign(merged.users, found.users);
+      Object.assign(merged.roles, found.roles);
+    }
+    return merged;
+  };
+
+  // Board settings plus the newest pinned messages.
   app.get('/pinboard', async () => {
     const settings = client.settings.get();
     const counts = client.pinboardManager.countsByBoard();
+    const recent = client.pinboardManager.getPage(null, RECENT_LIMIT, 0);
 
     return {
       enabled: settings.features.pinboard,
       boards: settings.pinboard.boards.map(board => boardStatus(client, board, counts.get(board.id) ?? 0)),
-      recent: client.pinboardManager.getPage(null, RECENT_LIMIT, 0),
-      total: client.pinboardManager.size()
+      recent,
+      total: client.pinboardManager.size(),
+      mentions: await mentionsOf(recent)
     };
+  });
+
+  // Redirects to a user's current avatar (server avatar when `guild` is given), so stored pins
+  // keep showing the right picture after someone changed theirs.
+  app.get('/users/:userId/avatar', async (request, reply) => {
+    const { userId } = request.params as { userId: string };
+    if (!isSnowflake(userId)) throw new PanelError(400, 'Invalid user ID.');
+    const guildId = str((request.query as Record<string, unknown>).guild, 30) || undefined;
+    const { avatarUrl } = await userInfo(client, userId, guildId);
+    if (!avatarUrl) throw new PanelError(404, 'Unknown user.');
+    return reply.header('Cache-Control', 'private, max-age=3600').redirect(avatarUrl);
   });
 
   const findBoard = (boardId: string): PinboardBoard => {
@@ -133,7 +167,13 @@ export const registerCommunityRoutes: RouteRegistrar = (app, ctx) => {
     // Older pins are completed in the background; the page doesn't wait for it.
     startBackfill(client, board);
 
-    return { entries: entries.map(e => ({ ...e, channelName: channelName(board, e.channelId) })), total, offset, limit };
+    return {
+      entries: entries.map(e => ({ ...e, channelName: channelName(board, e.channelId) })),
+      total,
+      offset,
+      limit,
+      mentions: await mentionsOf(entries)
+    };
   });
 
   app.get('/pinboard/boards/:boardId/entries/:messageId', async (request): Promise<PinboardEntryDetail> => {
@@ -141,7 +181,7 @@ export const registerCommunityRoutes: RouteRegistrar = (app, ctx) => {
     const board = findBoard(boardId);
     const detail = client.pinboardManager.getDetail(boardId, messageId);
     if (!detail) throw new PanelError(404, 'Pinned message not found.');
-    return { ...detail, channelName: channelName(board, detail.channelId) };
+    return { ...detail, channelName: channelName(board, detail.channelId), mentions: await mentionsOf([detail]) };
   });
 
   app.get('/pinboard/boards/:boardId/stats', async (request): Promise<PinboardStats> => {
@@ -153,7 +193,8 @@ export const registerCommunityRoutes: RouteRegistrar = (app, ctx) => {
     return {
       ...stats,
       channels: stats.channels.map(ch => ({ ...ch, name: channelName(board, ch.channelId) })),
-      backfill: backfillStatus(client, boardId)
+      backfill: backfillStatus(client, boardId),
+      mentions: await mentionsOf(stats.top)
     };
   });
 

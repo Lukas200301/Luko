@@ -62,10 +62,19 @@ function bestReaction(board: PinboardBoard, counted: QualifyingReaction[]): Qual
   return best;
 }
 
-function isIgnoredChannel(board: PinboardBoard, message: Message): boolean {
-  if (message.channelId === board.channelId) return true;
+// Pinboard channels (of any board) and the board's ignored channels.
+function isIgnoredChannel(board: PinboardBoard, boards: PinboardBoard[], message: Message): boolean {
+  if (boards.some(b => b.channelId === message.channelId)) return true;
   const parentId = message.channel.isThread() ? message.channel.parentId : null;
   return board.ignoredChannelIds.includes(message.channelId) || (!!parentId && board.ignoredChannelIds.includes(parentId));
+}
+
+// A pinboard post written by this or another Luko bot, also in an old pinboard channel.
+// Pinning those again only copies the header ("⭐ **5** #channel") and loses the real message.
+export function isPinboardPost(message: Message): boolean {
+  return !!message.author?.bot
+    && /\*\*\d+\*\*\s*<#\d+>/.test(message.content)
+    && !!message.embeds[0]?.description?.startsWith('**[Jump to message!](');
 }
 
 function buildEmbed(message: Message): { embed: EmbedBuilder; imageUrl: string | null } {
@@ -76,7 +85,9 @@ function buildEmbed(message: Message): { embed: EmbedBuilder; imageUrl: string |
       iconURL: message.author?.displayAvatarURL() || undefined
     })
     .setDescription(`**[Jump to message!](${message.url})**\n\n${message.content || ''}`)
-    .setFooter({ text: `#${'name' in message.channel ? message.channel.name : 'unknown'} • Today at ${message.createdAt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}` });
+    .setFooter({ text: `#${'name' in message.channel ? message.channel.name : 'unknown'}` })
+    // Discord shows this in each reader's own time zone ("Today at …", "Yesterday at …", or the date).
+    .setTimestamp(message.createdAt);
 
   let imageUrl: string | null = message.attachments.find(a => !!a.contentType?.startsWith('image/'))?.url ?? null;
 
@@ -107,8 +118,8 @@ function displayEmoji(best: QualifyingReaction): string {
 }
 
 // Creates, updates or removes the post for one message on one board.
-async function updateBoard(client: Client, board: PinboardBoard, message: Message): Promise<void> {
-  if (isIgnoredChannel(board, message)) return;
+async function updateBoard(client: Client, board: PinboardBoard, boards: PinboardBoard[], message: Message): Promise<void> {
+  if (isIgnoredChannel(board, boards, message) || isPinboardPost(message)) return;
   if (board.ignoreBotMessages && message.author?.bot) return;
 
   const targetChannel = await client.channels.fetch(board.channelId).catch(() => null);
@@ -172,7 +183,7 @@ export async function refreshPinboards(client: Client, partialMessage: Message |
   try {
     const message = partialMessage.partial ? await partialMessage.fetch() : partialMessage;
     for (const board of boards) {
-      await updateBoard(client, board, message);
+      await updateBoard(client, board, settings.pinboard.boards, message);
     }
   } catch (error) {
     console.error('Error handling pinboard reaction:', error);

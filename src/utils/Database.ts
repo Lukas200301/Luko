@@ -226,12 +226,19 @@ function addPinboardColumns(db: DatabaseSync): void {
   }
 }
 
-// A Discord ID contains the time it was created, so every pin knows its message date.
-function fillMessageDates(db: DatabaseSync): void {
+// The time a Discord ID was created, as SQL.
+const snowflakeTimeSql = (column: string) => `((CAST(${column} AS INTEGER) >> 22) + 1420070400000)`;
+
+// A Discord ID contains the time it was created: the original message's ID is when it was sent, and
+// the pinboard post's ID is when it was pinned. Older versions stored the import or edit time instead.
+function fillPinboardDates(db: DatabaseSync): void {
+  const sent = snowflakeTimeSql('original_message_id');
+  const pinned = snowflakeTimeSql('pinboard_message_id');
   db.exec(`
-    UPDATE pinboard
-    SET message_created_at = (CAST(original_message_id AS INTEGER) >> 22) + 1420070400000
-    WHERE message_created_at IS NULL
+    UPDATE pinboard SET message_created_at = ${sent}
+    WHERE original_message_id GLOB '[0-9]*' AND message_created_at IS NOT ${sent};
+    UPDATE pinboard SET pinned_at = ${pinned}
+    WHERE pinboard_message_id GLOB '[0-9]*' AND pinned_at IS NOT ${pinned};
   `);
 }
 
@@ -277,12 +284,12 @@ function openDatabase(): DatabaseSync {
     addPinboardColumns(db);
   }
   db.exec(SCHEMA);
-  fillMessageDates(db);
 
   const alreadyImported = db.prepare("SELECT value FROM meta WHERE key = 'json_imported'").get();
   if (!alreadyImported) {
     importLegacyJson(db);
   }
+  fillPinboardDates(db);
 
   return db;
 }

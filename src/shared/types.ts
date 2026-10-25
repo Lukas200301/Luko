@@ -333,6 +333,14 @@ export interface PinboardReaction {
 
 export interface PinboardEntryDetail extends PinboardEntry {
   reactions: PinboardReaction[];
+  mentions: DiscordMentions;
+}
+
+// Names for the <#channel>, <@user> and <@&role> mentions in message text, so the panel can show them like Discord.
+export interface DiscordMentions {
+  channels: Record<string, string>;
+  users: Record<string, string>;
+  roles: Record<string, { name: string; color: number }>;
 }
 
 export type PinboardRange = '7d' | '30d' | '90d' | '365d' | 'all';
@@ -352,6 +360,7 @@ export interface PinboardStats {
   channels: { channelId: string; name: string | null; pins: number; reactions: number }[];
   top: PinboardEntry[];
   backfill: { pending: number; running: boolean; done: number; total: number };
+  mentions: DiscordMentions;
 }
 
 export interface ReminderInfo {
@@ -522,4 +531,5 @@ export interface PinboardEntryPage {
   total: number;
   offset: number;
   limit: number;
+  mentions: DiscordMentions;
 }

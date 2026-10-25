@@ -3,9 +3,10 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router';
 import { ArrowRight, ChevronDown, Hash, Pin, Plus, Save, Smile, Trash2, X } from 'lucide-react';
 import { api } from '../lib/api';
+import { rememberMentions } from '../lib/discord';
 import { useSaveSettings, useSettings } from '../lib/settings';
 import { cn } from '../lib/utils';
-import type { GuildDetail, PinboardBoard, PinboardBoardStatus, PinboardEntry } from '../lib/types';
+import type { DiscordMentions, GuildDetail, PinboardBoard, PinboardBoardStatus, PinboardEntry } from '../lib/types';
 import {
   Badge,
   Button,
@@ -32,6 +33,7 @@ interface PinboardResponse {
   boards: PinboardBoardStatus[];
   recent: PinboardEntry[];
   total: number;
+  mentions: DiscordMentions;
 }
 
 function newBoard(): PinboardBoard {
@@ -274,7 +276,7 @@ export function PinboardPage() {
   const [drafts, setDrafts] = useState<string[]>([]);
   const [savingId, setSavingId] = useState<string | null>(null);
 
-  const { data, isLoading } = useQuery({ queryKey: ['pinboard'], queryFn: () => api.get<PinboardResponse>('/api/pinboard') });
+  const { data, isLoading } = useQuery({ queryKey: ['pinboard'], queryFn: () => api.get<PinboardResponse>('/api/pinboard').then(rememberMentions) });
 
   if (isLoading || !data) return <PageLoader />;
 

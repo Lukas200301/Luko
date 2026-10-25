@@ -1,10 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CalendarClock, ExternalLink, Hash, MessageSquare, Pin, Trash2 } from 'lucide-react';
 import { api } from '../lib/api';
+import { avatarUrl, rememberMentions } from '../lib/discord';
 import { formatDateTime, timeAgo } from '../lib/utils';
 import type { PinboardBoardStatus, PinboardEntry, PinboardEntryDetail } from '../lib/types';
 import { Avatar, Badge, Button, Dialog, PageLoader, useConfirm, useToast } from './ui';
 import { EmojiPreview } from './EmojiPicker';
+import { DiscordText } from './DiscordText';
 
 export function useRemoveEntry(onDone?: () => void) {
   const toast = useToast();
@@ -28,6 +30,11 @@ function postUrl(board: PinboardBoardStatus | undefined, entry: PinboardEntry): 
 
 function originalUrl(board: PinboardBoardStatus | undefined, entry: PinboardEntry): string | null {
   return board && entry.channelId ? `https://discord.com/channels/${board.guildId}/${entry.channelId}/${entry.originalMessageId}` : null;
+}
+
+// The author's current avatar, falling back to the one stored with the pin.
+export function EntryAvatar({ entry, board, className }: { entry: PinboardEntry; board?: PinboardBoardStatus; className?: string }) {
+  return <Avatar src={avatarUrl(entry.authorId, board?.guildId)} fallbackSrc={entry.authorAvatarUrl} name={entry.authorName ?? '?'} className={className} />;
 }
 
 export function EntryEmoji({ entry }: { entry: PinboardEntry }) {
@@ -58,7 +65,7 @@ export function EntryCard({ entry, board, showBoard, onOpen }: {
       onClick={() => onOpen?.(entry)}
     >
       <div className="mb-2 flex items-center gap-2">
-        <Avatar src={entry.authorAvatarUrl} name={entry.authorName ?? '?'} className="size-7" />
+        <EntryAvatar entry={entry} board={board} className="size-7" />
         <div className="min-w-0 flex-1">
           <div className="truncate text-sm font-medium">{entry.authorName ?? 'Unknown author'}</div>
           {entry.channelName && <div className="truncate text-[11px] text-muted">#{entry.channelName}</div>}
@@ -66,7 +73,7 @@ export function EntryCard({ entry, board, showBoard, onOpen }: {
         <EntryEmoji entry={entry} />
       </div>
       {text ? (
-        <p className="line-clamp-4 text-sm break-words whitespace-pre-line text-fg/90">{text}</p>
+        <p className="line-clamp-4 text-sm text-fg/90"><DiscordText text={text} compact /></p>
       ) : (
         <p className="text-xs text-muted italic">{entry.imageUrl ? 'Image' : entry.content === '' ? 'No text' : 'Preview not loaded yet'}</p>
       )}
@@ -114,7 +121,7 @@ export function EntryDialog({ entry, board, onClose }: { entry: PinboardEntry | 
   const remove = useRemoveEntry(onClose);
   const { data: detail, isLoading } = useQuery({
     queryKey: ['pinboard-entry', entry?.boardId, entry?.originalMessageId],
-    queryFn: () => api.get<PinboardEntryDetail>(`/api/pinboard/boards/${entry!.boardId}/entries/${entry!.originalMessageId}`),
+    queryFn: () => api.get<PinboardEntryDetail>(`/api/pinboard/boards/${entry!.boardId}/entries/${entry!.originalMessageId}`).then(rememberMentions),
     enabled: !!entry
   });
 
@@ -129,7 +136,7 @@ export function EntryDialog({ entry, board, onClose }: { entry: PinboardEntry | 
       size="lg"
       title={shown ? (
         <span className="flex items-center gap-2">
-          <Avatar src={shown.authorAvatarUrl} name={shown.authorName ?? '?'} className="size-7" />
+          <EntryAvatar entry={shown} board={board} className="size-7" />
           {shown.authorName ?? 'Unknown author'}
         </span>
       ) : ''}
@@ -161,7 +168,7 @@ export function EntryDialog({ entry, board, onClose }: { entry: PinboardEntry | 
           </div>
 
           {(shown.content ?? shown.excerpt) ? (
-            <p className="text-sm leading-relaxed break-words whitespace-pre-wrap">{shown.content ?? shown.excerpt}</p>
+            <DiscordText text={shown.content ?? shown.excerpt ?? ''} className="text-sm leading-relaxed" />
           ) : (
             <p className="text-sm text-muted italic">No text</p>
           )}

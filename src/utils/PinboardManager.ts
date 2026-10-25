@@ -50,6 +50,14 @@ function toEntry(row: PinboardRow): PinboardEntry {
 }
 
 const DAY = 24 * 60 * 60 * 1000;
+
+// The time a Discord ID (snowflake) was created.
+export function snowflakeTime(id: string | undefined): number | undefined {
+  return id && /^\d{15,25}$/.test(id) ? Number((BigInt(id) >> 22n) + 1420070400000n) : undefined;
+}
+
+// Text of a pinboard post's header ("<emoji> **<count>** <#channel>") with nothing else around it.
+export const POST_HEADER = /^\s*(\S{1,64}?)\s*\*\*(\d+)\*\*\s*<#(\d+)>\s*$/;
 const RANGE_DAYS: Record<PinboardRange, number | null> = { '7d': 7, '30d': 30, '90d': 90, '365d': 365, all: null };
 
 export function rangeStart(range: PinboardRange): number | null {
@@ -92,7 +100,7 @@ const statements = {
       excerpt = COALESCE(excluded.excerpt, pinboard.excerpt),
       image_url = COALESCE(excluded.image_url, pinboard.image_url),
       count = COALESCE(excluded.count, pinboard.count),
-      pinned_at = COALESCE(pinboard.pinned_at, excluded.pinned_at),
+      pinned_at = excluded.pinned_at,
       content = COALESCE(excluded.content, pinboard.content),
       author_id = COALESCE(excluded.author_id, pinboard.author_id),
       emoji = COALESCE(excluded.emoji, pinboard.emoji),
@@ -106,6 +114,18 @@ const statements = {
   insertReaction: db.prepare('INSERT OR REPLACE INTO pinboard_reactions (board_id, original_message_id, emoji, display, count) VALUES (?, ?, ?, ?, ?)'),
   deleteReactions: db.prepare('DELETE FROM pinboard_reactions WHERE board_id = ? AND original_message_id = ?'),
   deleteBoardReactions: db.prepare('DELETE FROM pinboard_reactions WHERE board_id = ?'),
+  reposts: db.prepare(`
+    SELECT * FROM pinboard WHERE board_id = ? AND content LIKE '%**%<#%' AND COALESCE(updated_at, 0) > ? LIMIT ?
+  `),
+  moveEntry: db.prepare(`
+    UPDATE pinboard SET original_message_id = ?, channel_id = ?, author_id = ?, author_name = ?, author_avatar_url = ?,
+      content = ?, excerpt = ?, image_url = ?, message_created_at = ?, updated_at = ?
+    WHERE board_id = ? AND original_message_id = ?
+  `),
+  getMeta: db.prepare('SELECT value FROM meta WHERE key = ?'),
+  setMeta: db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)'),
+  moveReactions: db.prepare('UPDATE pinboard_reactions SET original_message_id = ? WHERE board_id = ? AND original_message_id = ?'),
+  setAvatar: db.prepare('UPDATE pinboard SET author_avatar_url = ? WHERE author_id = ? AND author_avatar_url IS NOT ?'),
   missingContent: db.prepare('SELECT * FROM pinboard WHERE board_id = ? AND content IS NULL ORDER BY pinned_at DESC LIMIT ?'),
   countMissing: db.prepare('SELECT COUNT(*) AS n FROM pinboard WHERE board_id = ? AND content IS NULL')
 };
@@ -121,7 +141,7 @@ export class PinboardManager {
     return row ? toEntry(row) : undefined;
   }
 
-  public getDetail(boardId: string, originalMessageId: string): PinboardEntryDetail | undefined {
+  public getDetail(boardId: string, originalMessageId: string): Omit<PinboardEntryDetail, 'mentions'> | undefined {
     const entry = this.getEntry(boardId, originalMessageId);
     if (!entry) return undefined;
     const reactions = statements.reactions.all(boardId, originalMessageId) as unknown as PinboardReaction[];
@@ -139,12 +159,13 @@ export class PinboardManager {
       metadata.excerpt ?? null,
       metadata.imageUrl ?? null,
       metadata.count ?? null,
-      metadata.pinnedAt ?? Date.now(),
+      // The pinboard post's ID says when it was posted, which is when the message was pinned.
+      snowflakeTime(pinboardMessageId) ?? metadata.pinnedAt ?? Date.now(),
       metadata.content ?? null,
       metadata.authorId ?? null,
       metadata.emoji ?? null,
       metadata.emojiDisplay ?? null,
-      metadata.messageCreatedAt ?? null,
+      snowflakeTime(originalMessageId) ?? metadata.messageCreatedAt ?? null,
       Date.now()
     );
   }
@@ -190,6 +211,51 @@ export class PinboardManager {
   }
 
   // Entries whose full message hasn't been stored yet (pinned by older versions).
+  // Stored pins whose text looks like the header of a pinboard post, changed since `since`:
+  // most likely a pinboard post that was pinned again (see PinboardBackfill.unwrapRepost).
+  public repostCandidates(boardId: string, since: number, limit: number): PinboardEntry[] {
+    return (statements.reposts.all(boardId, since, limit) as unknown as PinboardRow[])
+      .map(toEntry)
+      .filter(entry => POST_HEADER.test(entry.content ?? ''));
+  }
+
+  // Points an entry at another original message, replacing everything about the message
+  // but keeping its pinboard post and reactions.
+  public moveEntry(boardId: string, fromMessageId: string, toMessageId: string, message: PinboardMetadata) {
+    transaction(db, () => {
+      statements.moveEntry.run(
+        toMessageId,
+        message.channelId ?? null,
+        message.authorId ?? null,
+        message.authorName ?? null,
+        message.authorAvatarUrl ?? null,
+        message.content ?? null,
+        message.excerpt ?? null,
+        message.imageUrl ?? null,
+        snowflakeTime(toMessageId) ?? null,
+        Date.now(),
+        boardId,
+        fromMessageId
+      );
+      statements.moveReactions.run(toMessageId, boardId, fromMessageId);
+    });
+  }
+
+  // When reposted pins of a board were last looked for (see repostCandidates).
+  public repostsCheckedAt(boardId: string): number {
+    const row = statements.getMeta.get(`pinboard_reposts_checked:${boardId}`) as { value: string } | undefined;
+    return row ? Number(row.value) : 0;
+  }
+
+  public setRepostsCheckedAt(boardId: string, time: number) {
+    statements.setMeta.run(`pinboard_reposts_checked:${boardId}`, String(time));
+  }
+
+  // Keeps stored avatars current when a user changed theirs.
+  public updateAvatar(authorId: string, url: string) {
+    statements.setAvatar.run(url, authorId, url);
+  }
+
   public missingContent(boardId: string, limit: number): PinboardEntry[] {
     return (statements.missingContent.all(boardId, limit) as unknown as PinboardRow[]).map(toEntry);
   }
@@ -250,7 +316,7 @@ export class PinboardManager {
 
   // ---------- Statistics ----------
 
-  public stats(boardId: string, range: PinboardRange): Omit<PinboardStats, 'channels' | 'backfill'> & { channels: { channelId: string; pins: number; reactions: number }[] } {
+  public stats(boardId: string, range: PinboardRange): Omit<PinboardStats, 'channels' | 'backfill' | 'mentions'> & { channels: { channelId: string; pins: number; reactions: number }[] } {
     const since = rangeStart(range);
     const inRange = since === null ? '' : 'AND p.pinned_at >= ?';
     const params: SQLInputValue[] = since === null ? [boardId] : [boardId, since];

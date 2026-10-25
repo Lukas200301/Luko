@@ -3,8 +3,10 @@ import { Link, useParams } from 'react-router';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, BarChart3, Download, Hash, Pin, RotateCw, Search, Smile, Trophy, Users, X } from 'lucide-react';
 import { api } from '../lib/api';
+import { avatarUrl, rememberMentions } from '../lib/discord';
 import { cn } from '../lib/utils';
 import type {
+  DiscordMentions,
   PinboardBoardStatus,
   PinboardEntry,
   PinboardEntryPage,
@@ -15,6 +17,7 @@ import type {
 import {
   Avatar,
   Button,
+  Dialog,
   Card,
   CardBody,
   CardHeader,
@@ -29,7 +32,8 @@ import {
   useToast
 } from '../components/ui';
 import { EmojiPreview, emojiName } from '../components/EmojiPicker';
-import { EntryCard, EntryDialog, EntrySkeletons } from '../components/PinboardEntries';
+import { EntryAvatar, EntryCard, EntryDialog, EntrySkeletons } from '../components/PinboardEntries';
+import { DiscordText } from '../components/DiscordText';
 
 const PinsTimelineChart = lazy(() => import('../components/PinsTimelineChart').then(m => ({ default: m.PinsTimelineChart })));
 
@@ -52,12 +56,16 @@ const SORTS: { value: PinboardSort; label: string }[] = [
 
 interface Filters {
   emoji?: { key: string; display: string };
-  author?: { key: string; name: string };
-  channel?: { id: string; name: string };
 }
+
+// An author or channel whose pins are shown in a window.
+type PinsTarget =
+  | { kind: 'author'; key: string; name: string; avatarUrl: string | null }
+  | { kind: 'channel'; id: string; name: string };
 
 interface Overview {
   boards: PinboardBoardStatus[];
+  mentions: DiscordMentions;
 }
 
 function StatCard({ label, value, hint }: { label: string; value: ReactNode; hint?: ReactNode }) {
@@ -70,20 +78,21 @@ function StatCard({ label, value, hint }: { label: string; value: ReactNode; hin
   );
 }
 
-// A ranked list where every row can be clicked to filter the pinned messages by it.
-function Ranking<T>({ title, icon, items, empty, render, isActive, onPick }: {
+// A ranked list where every row can be clicked.
+function Ranking<T>({ title, icon, description, items, empty, render, isActive, onPick }: {
   title: string;
   icon: ReactNode;
+  description: string;
   items: T[];
   empty: string;
   render: (item: T) => { key: string; label: ReactNode; pins: number; reactions: number };
-  isActive: (item: T) => boolean;
+  isActive?: (item: T) => boolean;
   onPick: (item: T) => void;
 }) {
   const max = Math.max(1, ...items.map(i => render(i).pins));
   return (
     <Card>
-      <CardHeader title={title} icon={icon} description="Click one to filter the list" />
+      <CardHeader title={title} icon={icon} description={description} />
       <CardBody className="space-y-1 p-3">
         {items.length === 0 ? <p className="px-2 py-4 text-center text-xs text-muted">{empty}</p> : items.map(item => {
           const row = render(item);
@@ -92,7 +101,7 @@ function Ranking<T>({ title, icon, items, empty, render, isActive, onPick }: {
               key={row.key}
               type="button"
               onClick={() => onPick(item)}
-              className={cn('relative w-full overflow-hidden rounded-lg px-3 py-2 text-left transition hover:bg-surface-2', isActive(item) && 'ring-2 ring-accent')}
+              className={cn('relative w-full overflow-hidden rounded-lg px-3 py-2 text-left transition hover:bg-surface-2', isActive?.(item) && 'ring-2 ring-accent')}
             >
               <span className="absolute inset-y-0 left-0 bg-accent/10" style={{ width: `${(row.pins / max) * 100}%` }} />
               <span className="relative flex items-center gap-3 text-sm">
@@ -104,6 +113,131 @@ function Ranking<T>({ title, icon, items, empty, render, isActive, onPick }: {
         })}
       </CardBody>
     </Card>
+  );
+}
+
+function useDebounced(value: string, ms = 300): string {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const timer = setTimeout(() => setDebounced(value.trim()), ms);
+    return () => clearTimeout(timer);
+  }, [value, ms]);
+  return debounced;
+}
+
+// Pages through a board's pins with the given filters; every page carries the names for its mentions.
+function useEntryPages(boardId: string, params: URLSearchParams, scope = 'list') {
+  return useInfiniteQuery({
+    queryKey: ['pinboard-entries', boardId, scope, params.toString()],
+    queryFn: ({ pageParam }) => api.get<PinboardEntryPage>(`/api/pinboard/boards/${boardId}/entries?${params}&offset=${pageParam}`).then(rememberMentions),
+    initialPageParam: 0,
+    getNextPageParam: (last) => (last.offset + last.entries.length < last.total ? last.offset + last.entries.length : undefined)
+  });
+}
+
+// Grid of pin cards with loading, error and empty states and a "load more" footer.
+function EntryGrid({ entries, board, empty, onOpen, columns = 'sm:grid-cols-2 xl:grid-cols-3' }: {
+  entries: ReturnType<typeof useEntryPages>;
+  board?: PinboardBoardStatus;
+  empty: { title: string; description?: string };
+  onOpen: (entry: PinboardEntry) => void;
+  columns?: string;
+}) {
+  const list = entries.data?.pages.flatMap(p => p.entries) ?? [];
+  const total = entries.data?.pages[0]?.total ?? 0;
+
+  if (entries.isError) {
+    return (
+      <div className="p-5">
+        <Notice tone="danger" title="Couldn't load the pinned messages">
+          {entries.error instanceof Error ? entries.error.message : 'Unknown error'}
+          <span className="mt-2 block"><Button size="sm" variant="secondary" onClick={() => entries.refetch()}><RotateCw className="size-3.5" />Try again</Button></span>
+        </Notice>
+      </div>
+    );
+  }
+  if (entries.isLoading) return <div className={cn('grid gap-4 p-5', columns)}><EntrySkeletons count={6} /></div>;
+  if (list.length === 0) return <EmptyState icon={<Pin className="size-5" />} title={empty.title} description={empty.description} />;
+
+  return (
+    <>
+      <div className={cn('grid gap-4 p-5 transition-opacity', columns, entries.isFetching && !entries.isFetchingNextPage && 'opacity-60')}>
+        {list.map(entry => <EntryCard key={entry.originalMessageId} entry={entry} board={board} onOpen={onOpen} />)}
+        {entries.isFetchingNextPage && <EntrySkeletons count={3} />}
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-5 py-3 text-sm">
+        <span className="text-muted">Showing {list.length.toLocaleString()} of {total.toLocaleString()}</span>
+        {entries.hasNextPage ? (
+          <Button variant="secondary" onClick={() => entries.fetchNextPage()} loading={entries.isFetchingNextPage}>
+            {entries.isFetchingNextPage ? 'Loading…' : `Load ${Math.min(PAGE_SIZE, total - list.length)} more`}
+          </Button>
+        ) : (
+          <span className="text-xs text-muted">All loaded</span>
+        )}
+      </div>
+    </>
+  );
+}
+
+// All pins of one author or one channel, with their own time range, sorting and search.
+function PinsDialog({ target, board, boardId, initialRange, onClose, onOpen }: {
+  target: PinsTarget;
+  board?: PinboardBoardStatus;
+  boardId: string;
+  initialRange: PinboardRange;
+  onClose: () => void;
+  onOpen: (entry: PinboardEntry) => void;
+}) {
+  const [range, setRange] = useState(initialRange);
+  const [sort, setSort] = useState<PinboardSort>('newest');
+  const [search, setSearch] = useState('');
+  const debouncedSearch = useDebounced(search);
+
+  const params = new URLSearchParams({ range, sort, limit: String(PAGE_SIZE) });
+  if (target.kind === 'author') params.set('author', target.key);
+  else params.set('channel', target.id);
+  if (debouncedSearch) params.set('q', debouncedSearch);
+
+  const entries = useEntryPages(boardId, params, 'dialog');
+  const pins = entries.data?.pages[0]?.total;
+  const authorId = target.kind === 'author' && !target.key.startsWith('name:') ? target.key : undefined;
+  const rangeLabel = RANGES.find(r => r.value === range)?.label.toLowerCase();
+
+  return (
+    <Dialog
+      open
+      onClose={onClose}
+      size="xl"
+      title={
+        <span className="flex items-center gap-2.5">
+          {target.kind === 'author'
+            ? <Avatar src={avatarUrl(authorId, board?.guildId)} fallbackSrc={target.avatarUrl} name={target.name} className="size-8" />
+            : <span className="flex size-8 items-center justify-center rounded-full bg-accent/15 text-accent"><Hash className="size-4" /></span>}
+          {target.kind === 'channel' ? `#${target.name}` : target.name}
+        </span>
+      }
+      description={pins === undefined ? 'Loading pins…' : `${pins.toLocaleString()} ${pins === 1 ? 'pin' : 'pins'} · ${range === 'all' ? 'all time' : `last ${rangeLabel}`}`}
+    >
+      <div className="-mx-5 -my-4">
+        <div className="sticky top-0 z-10 flex flex-wrap items-center gap-2 border-b border-border bg-surface px-5 py-3">
+          <Tabs value={range} onChange={setRange} tabs={RANGES} />
+          <div className="relative ml-auto">
+            <Search className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-muted" />
+            <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search…" className="h-8 w-40 pl-8 text-xs" />
+          </div>
+          <Select value={sort} onChange={(e) => setSort(e.target.value as PinboardSort)} className="h-8 w-40 text-xs">
+            {SORTS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </Select>
+        </div>
+        <EntryGrid
+          entries={entries}
+          board={board}
+          onOpen={onOpen}
+          columns="sm:grid-cols-2 lg:grid-cols-3"
+          empty={{ title: 'No pins match', description: debouncedSearch || range !== 'all' ? 'Try another time range or search.' : undefined }}
+        />
+      </div>
+    </Dialog>
   );
 }
 
@@ -149,21 +283,17 @@ export function PinboardBoardPage() {
   const [sort, setSort] = useState<PinboardSort>('newest');
   const [filters, setFilters] = useState<Filters>({});
   const [search, setSearch] = useState('');
-  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const debouncedSearch = useDebounced(search);
   const [chartMetric, setChartMetric] = useState<'pins' | 'reactions'>('pins');
   const [opened, setOpened] = useState<PinboardEntry | null>(null);
+  const [pinsOf, setPinsOf] = useState<PinsTarget | null>(null);
 
-  useEffect(() => {
-    const timer = setTimeout(() => setDebouncedSearch(search.trim()), 300);
-    return () => clearTimeout(timer);
-  }, [search]);
-
-  const { data: overview } = useQuery({ queryKey: ['pinboard'], queryFn: () => api.get<Overview>('/api/pinboard') });
+  const { data: overview } = useQuery({ queryKey: ['pinboard'], queryFn: () => api.get<Overview>('/api/pinboard').then(rememberMentions) });
   const board = overview?.boards.find(b => b.id === boardId);
 
   const stats = useQuery({
     queryKey: ['pinboard-stats', boardId, range],
-    queryFn: () => api.get<PinboardStats>(`/api/pinboard/boards/${boardId}/stats?range=${range}`),
+    queryFn: () => api.get<PinboardStats>(`/api/pinboard/boards/${boardId}/stats?range=${range}`).then(rememberMentions),
     // While older pins are being loaded, refresh to show the progress.
     refetchInterval: (q) => (q.state.data?.backfill.running ? 2000 : false)
   });
@@ -176,21 +306,12 @@ export function PinboardBoardPage() {
 
   const params = new URLSearchParams({ range, sort, limit: String(PAGE_SIZE) });
   if (filters.emoji) params.set('emoji', filters.emoji.key);
-  if (filters.author) params.set('author', filters.author.key);
-  if (filters.channel) params.set('channel', filters.channel.id);
   if (debouncedSearch) params.set('q', debouncedSearch);
 
-  const entries = useInfiniteQuery({
-    queryKey: ['pinboard-entries', boardId, params.toString()],
-    queryFn: ({ pageParam }) => api.get<PinboardEntryPage>(`/api/pinboard/boards/${boardId}/entries?${params}&offset=${pageParam}`),
-    initialPageParam: 0,
-    getNextPageParam: (last) => (last.offset + last.entries.length < last.total ? last.offset + last.entries.length : undefined)
-  });
-
-  const list = entries.data?.pages.flatMap(p => p.entries) ?? [];
+  const entries = useEntryPages(boardId, params);
   const total = entries.data?.pages[0]?.total ?? 0;
   const s = stats.data;
-  const hasFilters = !!(filters.emoji || filters.author || filters.channel || debouncedSearch);
+  const hasFilters = !!(filters.emoji || debouncedSearch);
   const toggle = <K extends keyof Filters>(key: K, value: Filters[K], same: boolean) => setFilters(f => ({ ...f, [key]: same ? undefined : value }));
 
   return (
@@ -240,6 +361,7 @@ export function PinboardBoardPage() {
             <Ranking
               title="Emojis"
               icon={<Smile className="size-4" />}
+              description="Click one to filter the list"
               items={s.emojis}
               empty="No reactions recorded yet"
               render={(e) => ({ key: e.emoji, label: <><EmojiPreview value={e.display || e.emoji} className="size-5" /><span className="truncate text-xs text-muted">{emojiName(e.display)}</span></>, pins: e.pins, reactions: e.reactions })}
@@ -252,20 +374,25 @@ export function PinboardBoardPage() {
             <Ranking
               title="Top authors"
               icon={<Users className="size-4" />}
+              description="Click one to see their pins"
               items={s.authors}
               empty="No authors yet"
-              render={(a) => ({ key: a.key, label: <><Avatar src={a.avatarUrl} name={a.name} className="size-6" /><span className="truncate">{a.name}</span></>, pins: a.pins, reactions: a.reactions })}
-              isActive={(a) => filters.author?.key === a.key}
-              onPick={(a) => toggle('author', { key: a.key, name: a.name }, filters.author?.key === a.key)}
+              render={(a) => ({
+                key: a.key,
+                label: <><Avatar src={avatarUrl(a.key, board?.guildId)} fallbackSrc={a.avatarUrl} name={a.name} className="size-6" /><span className="truncate">{a.name}</span></>,
+                pins: a.pins,
+                reactions: a.reactions
+              })}
+              onPick={(a) => setPinsOf({ kind: 'author', key: a.key, name: a.name, avatarUrl: a.avatarUrl })}
             />
             <Ranking
               title="Top channels"
               icon={<Hash className="size-4" />}
+              description="Click one to see its pins"
               items={s.channels}
               empty="No channels yet"
-              render={(c) => ({ key: c.channelId, label: <span className="truncate">#{c.name ?? c.channelId}</span>, pins: c.pins, reactions: c.reactions })}
-              isActive={(c) => filters.channel?.id === c.channelId}
-              onPick={(c) => toggle('channel', { id: c.channelId, name: c.name ?? c.channelId }, filters.channel?.id === c.channelId)}
+              render={(c) => ({ key: c.channelId, label: <span className="truncate">#{c.name ?? 'unknown-channel'}</span>, pins: c.pins, reactions: c.reactions })}
+              onPick={(c) => setPinsOf({ kind: 'channel', id: c.channelId, name: c.name ?? 'unknown-channel' })}
             />
           </div>
 
@@ -276,9 +403,11 @@ export function PinboardBoardPage() {
                 {s.top.map((entry, i) => (
                   <button key={entry.originalMessageId} type="button" onClick={() => setOpened(entry)} className="flex w-full items-center gap-3 px-5 py-2.5 text-left transition hover:bg-surface-2/60">
                     <span className="w-5 text-sm font-semibold text-muted tabular-nums">{i + 1}</span>
-                    <Avatar src={entry.authorAvatarUrl} name={entry.authorName ?? '?'} className="size-7" />
+                    <EntryAvatar entry={entry} board={board} className="size-7" />
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm">{entry.content || entry.excerpt || (entry.imageUrl ? 'Image' : 'No text')}</span>
+                      <span className="block truncate text-sm">
+                        {entry.content || entry.excerpt ? <DiscordText text={(entry.content || entry.excerpt)!} compact className="whitespace-nowrap" /> : entry.imageUrl ? 'Image' : 'No text'}
+                      </span>
                       <span className="block truncate text-xs text-muted">{entry.authorName ?? 'Unknown author'}</span>
                     </span>
                     <span className="flex shrink-0 items-center gap-1 text-sm font-medium tabular-nums">
@@ -314,48 +443,32 @@ export function PinboardBoardPage() {
           <div className="flex flex-wrap items-center gap-2 border-b border-border px-5 py-2.5 text-xs">
             <span className="text-muted">Filtered by</span>
             {filters.emoji && <FilterChip onRemove={() => setFilters(f => ({ ...f, emoji: undefined }))}><EmojiPreview value={filters.emoji.display} className="size-4" /></FilterChip>}
-            {filters.author && <FilterChip onRemove={() => setFilters(f => ({ ...f, author: undefined }))}>{filters.author.name}</FilterChip>}
-            {filters.channel && <FilterChip onRemove={() => setFilters(f => ({ ...f, channel: undefined }))}>#{filters.channel.name}</FilterChip>}
             {debouncedSearch && <FilterChip onRemove={() => setSearch('')}>“{debouncedSearch}”</FilterChip>}
             <button type="button" className="ml-auto text-accent hover:underline" onClick={() => { setFilters({}); setSearch(''); }}>Clear all</button>
           </div>
         )}
 
-        {entries.isError ? (
-          <div className="p-5">
-            <Notice tone="danger" title="Couldn't load the pinned messages">
-              {entries.error instanceof Error ? entries.error.message : 'Unknown error'}
-              <span className="mt-2 block"><Button size="sm" variant="secondary" onClick={() => entries.refetch()}><RotateCw className="size-3.5" />Try again</Button></span>
-            </Notice>
-          </div>
-        ) : entries.isLoading ? (
-          <div className="grid gap-4 p-5 sm:grid-cols-2 xl:grid-cols-3"><EntrySkeletons count={6} /></div>
-        ) : list.length === 0 ? (
-          <EmptyState
-            icon={<Pin className="size-5" />}
-            title={hasFilters || range !== 'all' ? 'Nothing matches these filters' : 'No pinned messages yet'}
-            description={hasFilters || range !== 'all' ? 'Try another time range or remove a filter.' : 'Messages appear here once they reach the reaction threshold.'}
-          />
-        ) : (
-          <>
-            <div className={cn('grid gap-4 p-5 sm:grid-cols-2 xl:grid-cols-3 transition-opacity', entries.isFetching && !entries.isFetchingNextPage && 'opacity-60')}>
-              {list.map(entry => <EntryCard key={entry.originalMessageId} entry={entry} board={board} onOpen={setOpened} />)}
-              {entries.isFetchingNextPage && <EntrySkeletons count={3} />}
-            </div>
-            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-5 py-3 text-sm">
-              <span className="text-muted">Showing {list.length.toLocaleString()} of {total.toLocaleString()}</span>
-              {entries.hasNextPage ? (
-                <Button variant="secondary" onClick={() => entries.fetchNextPage()} loading={entries.isFetchingNextPage}>
-                  {entries.isFetchingNextPage ? 'Loading…' : `Load ${Math.min(PAGE_SIZE, total - list.length)} more`}
-                </Button>
-              ) : (
-                <span className="text-xs text-muted">All loaded</span>
-              )}
-            </div>
-          </>
-        )}
+        <EntryGrid
+          entries={entries}
+          board={board}
+          onOpen={setOpened}
+          empty={hasFilters || range !== 'all'
+            ? { title: 'Nothing matches these filters', description: 'Try another time range or remove a filter.' }
+            : { title: 'No pinned messages yet', description: 'Messages appear here once they reach the reaction threshold.' }}
+        />
       </Card>
 
+      {pinsOf && (
+        <PinsDialog
+          key={pinsOf.kind === 'author' ? `a:${pinsOf.key}` : `c:${pinsOf.id}`}
+          target={pinsOf}
+          board={board}
+          boardId={boardId}
+          initialRange={range}
+          onClose={() => setPinsOf(null)}
+          onOpen={setOpened}
+        />
+      )}
       <EntryDialog entry={opened} board={board} onClose={() => setOpened(null)} />
     </div>
   );
