@@ -1,5 +1,5 @@
 import * as fs from 'node:fs';
-import { RouteRegistrar, PanelError, audit, requireOwner, str } from '../context';
+import { RouteRegistrar, PanelError, audit, bodyOf, bool, requireOwner, str } from '../context';
 import { BACKUP_DIR } from '../../utils/Database';
 import { checkForUpdates, currentUpdateStatus, startUpdate, updateStatus } from '../../utils/Updater';
 import { BackupOverview, UpdateStatus } from '../../shared/types';
@@ -71,12 +71,13 @@ export const registerMaintenanceRoutes: RouteRegistrar = (app, ctx) => {
 
   app.post('/updates/install', async (request): Promise<UpdateStatus> => {
     requireOwner(request);
+    const rebuild = bool(bodyOf(request).rebuild, false);
     try {
-      startUpdate(client);
+      startUpdate(client, { rebuild });
     } catch (error) {
       throw new PanelError(400, error instanceof Error ? error.message : String(error));
     }
-    audit(ctx, request, 'Started a bot update', str(updateStatus().commits[0]?.subject, 100));
+    audit(ctx, request, rebuild ? 'Reinstalled and rebuilt the bot' : 'Started a bot update', rebuild ? undefined : str(updateStatus().commits[0]?.subject, 100));
     return updateStatus();
   });
 };

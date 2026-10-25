@@ -122,7 +122,8 @@ function legacyBoard(old: LegacyPinboard): PinboardBoard {
     emojis: (old.emojis ?? []).map((emoji, i): PinboardEmoji => ({ emoji, display: old.emojiDisplays?.[i] ?? '', threshold: null })),
     ignoredChannelIds: [],
     ignoreSelfReactions: false,
-    ignoreBotMessages: false
+    ignoreBotMessages: false,
+    ignorePinboardPosts: false
   };
 }
 
@@ -137,7 +138,8 @@ export function normalizeBoard(board: Partial<PinboardBoard>): PinboardBoard {
     emojis: (board.emojis ?? []).map(e => ({ emoji: e.emoji, display: e.display ?? '', threshold: e.threshold ?? null })),
     ignoredChannelIds: board.ignoredChannelIds ?? [],
     ignoreSelfReactions: board.ignoreSelfReactions ?? false,
-    ignoreBotMessages: board.ignoreBotMessages ?? false
+    ignoreBotMessages: board.ignoreBotMessages ?? false,
+    ignorePinboardPosts: board.ignorePinboardPosts ?? false
   };
 }
 

@@ -38,10 +38,15 @@ export interface PinboardBoard {
   ignoredChannelIds: string[];
   ignoreSelfReactions: boolean;
   ignoreBotMessages: boolean;
+  // Posts of a pinboard (e.g. in an old pinboard channel or another board's channel) can't be pinned again.
+  ignorePinboardPosts: boolean;
 }
 
 export const PINBOARD_STATS_SECTIONS = ['totals', 'timeline', 'authors', 'channels', 'emojis', 'topPins'] as const;
 export type PinboardStatsSection = typeof PINBOARD_STATS_SECTIONS[number];
+// Sections that are ranked lists, each with its own number of entries.
+export const PINBOARD_STATS_LISTS = ['authors', 'channels', 'emojis', 'topPins'] as const;
+export type PinboardStatsList = typeof PINBOARD_STATS_LISTS[number];
 
 export interface PinboardStatsPost {
   channelId: string;
@@ -52,8 +57,8 @@ export interface PinboardStatsPost {
   color: string;
   // Shown in this order.
   sections: PinboardStatsSection[];
-  // Entries per list (authors, channels, emojis, top pins).
-  limit: number;
+  // Entries per list, e.g. top 5 authors but top 20 pins.
+  limits: Record<PinboardStatsList, number>;
   // 'fields' = lists side by side, 'list' = everything below each other.
   layout: 'fields' | 'list';
   // Mention authors (shown as @name, nobody is pinged) instead of plain names.
@@ -774,6 +779,7 @@ export interface EmbedData {
 }
 
 export interface EmbedPreviewResponse {
-  embed: EmbedData;
+  // A post can need several embeds (the chart has to end one, see PinboardStatsPost).
+  embeds: EmbedData[];
   mentions: DiscordMentions;
 }

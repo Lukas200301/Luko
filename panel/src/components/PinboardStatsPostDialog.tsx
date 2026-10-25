@@ -6,20 +6,22 @@ import { useAuthConfig } from '../lib/auth';
 import { useLive } from '../lib/live';
 import { rememberMentions } from '../lib/discord';
 import { cn } from '../lib/utils';
-import type { EmbedPreviewResponse, PinboardBoardStatus, PinboardRange, PinboardStatsPost, PinboardStatsSection } from '../lib/types';
+import type { EmbedPreviewResponse, PinboardBoardStatus, PinboardRange, PinboardStatsList, PinboardStatsPost, PinboardStatsSection } from '../lib/types';
 import { Button, Dialog, Field, Input, Notice, PageLoader, Select, SettingRow, Spinner, Switch, Tabs, Textarea, useToast } from './ui';
 import { ChannelSelect } from './pickers';
 import { DiscordEmbed } from './DiscordEmbed';
 
 const SECTIONS: Record<PinboardStatsSection, { label: string; hint: string }> = {
   totals: { label: 'Overview', hint: 'Pins, reactions, average and record' },
-  timeline: { label: 'Pins over time', hint: 'A small bar chart of the time range' },
+  timeline: { label: 'Pins over time', hint: 'A bar chart image of the time range' },
   authors: { label: 'Top authors', hint: 'Who gets pinned most' },
   channels: { label: 'Top channels', hint: 'Where pinned messages come from' },
   emojis: { label: 'Top emojis', hint: 'Which reactions pin the most' },
   topPins: { label: 'Most reactions', hint: 'The best pins, with links' }
 };
 const ALL_SECTIONS = Object.keys(SECTIONS) as PinboardStatsSection[];
+const LISTS: PinboardStatsSection[] = ['authors', 'channels', 'emojis', 'topPins'];
+const MAX_ENTRIES = 25;
 
 const RANGES: { value: PinboardRange; label: string }[] = [
   { value: '7d', label: 'Last 7 days' },
@@ -38,8 +40,14 @@ function useDebouncedValue<T>(value: T, ms = 400): T {
   return debounced;
 }
 
-// Which sections to show, in which order: every section is listed, unchecked ones are left out.
-function SectionPicker({ value, onChange }: { value: PinboardStatsSection[]; onChange: (sections: PinboardStatsSection[]) => void }) {
+// Which sections to show, in which order, and how many entries each list has.
+// Every section is listed; unchecked ones are left out.
+function SectionPicker({ value, onChange, limits, onLimitsChange }: {
+  value: PinboardStatsSection[];
+  onChange: (sections: PinboardStatsSection[]) => void;
+  limits: Record<PinboardStatsList, number>;
+  onLimitsChange: (limits: Record<PinboardStatsList, number>) => void;
+}) {
   const order = [...value, ...ALL_SECTIONS.filter(s => !value.includes(s))];
   const move = (index: number, by: number) => {
     const next = [...order];
@@ -58,6 +66,20 @@ function SectionPicker({ value, onChange }: { value: PinboardStatsSection[]; onC
               <div className="text-sm font-medium">{SECTIONS[section].label}</div>
               <div className="truncate text-xs text-muted">{SECTIONS[section].hint}</div>
             </div>
+            {LISTS.includes(section) && (
+              <label className="flex shrink-0 items-center gap-1.5 text-xs text-muted" title="How many entries to show">
+                Top
+                <Input
+                  type="number"
+                  min={1}
+                  max={MAX_ENTRIES}
+                  disabled={!on}
+                  className="h-8 w-16 text-xs"
+                  value={limits[section as PinboardStatsList]}
+                  onChange={(e) => onLimitsChange({ ...limits, [section]: Math.min(MAX_ENTRIES, Math.max(1, Number(e.target.value) || 1)) })}
+                />
+              </label>
+            )}
             <Button variant="ghost" size="icon" disabled={!on || i === 0} onClick={() => move(i, -1)} aria-label="Move up"><ArrowUp className="size-3.5" /></Button>
             <Button variant="ghost" size="icon" disabled={!on || i === value.length - 1} onClick={() => move(i, 1)} aria-label="Move down"><ArrowDown className="size-3.5" /></Button>
           </div>
@@ -144,13 +166,10 @@ function Editor({ board, initial, onClose }: { board: PinboardBoardStatus; initi
           </Field>
 
           <Field label="What to show">
-            <SectionPicker value={config.sections} onChange={(sections) => set('sections', sections)} />
+            <SectionPicker value={config.sections} onChange={(sections) => set('sections', sections)} limits={config.limits} onLimitsChange={(limits) => set('limits', limits)} />
           </Field>
 
           <div className="divide-y divide-border rounded-lg border border-border px-4">
-            <SettingRow title="Entries per list">
-              <Input type="number" min={1} max={10} className="w-20" value={config.limit} onChange={(e) => set('limit', Math.min(10, Math.max(1, Number(e.target.value) || 1)))} />
-            </SettingRow>
             <SettingRow title="Mention people" description="Shows authors as @name. Nobody gets pinged.">
               <Switch checked={config.mentionAuthors} onChange={(on) => set('mentionAuthors', on)} label="Mention people" />
             </SettingRow>
@@ -183,7 +202,7 @@ function Editor({ board, initial, onClose }: { board: PinboardBoardStatus; initi
             <Notice tone="danger">{preview.error instanceof Error ? preview.error.message : 'Preview failed'}</Notice>
           ) : !preview.data ? <PageLoader /> : (
             <DiscordEmbed
-              embed={preview.data.embed}
+              embeds={preview.data.embeds}
               botName={overview?.bot.tag?.split('#')[0] ?? authConfig?.botName ?? 'Luko'}
               botAvatarUrl={overview?.bot.avatarUrl ?? authConfig?.botAvatarUrl}
             />

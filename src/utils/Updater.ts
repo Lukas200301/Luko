@@ -135,7 +135,11 @@ function run(command: string, args: string[]): Promise<void> {
   return new Promise((resolve, reject) => {
     // npm is a .cmd script on Windows, which only starts through a shell. The arguments are fixed.
     const shell = command === 'npm' && process.platform === 'win32';
-    const child = spawn(command, args, { cwd: BOT_ROOT, windowsHide: true, shell, stdio: ['ignore', 'pipe', 'pipe'] });
+    // pm2 starts the bot with NODE_ENV=production. Passed on, it makes npm skip (and remove) the
+    // devDependencies the build needs (TypeScript, Vite). The build sets its own mode.
+    const env = { ...process.env };
+    delete env.NODE_ENV;
+    const child = spawn(command, args, { cwd: BOT_ROOT, env, windowsHide: true, shell, stdio: ['ignore', 'pipe', 'pipe'] });
     const forward = (data: Buffer) => data.toString().split(/\r?\n/).forEach(addLog);
     child.stdout.on('data', forward);
     child.stderr.on('data', forward);
@@ -144,7 +148,8 @@ function run(command: string, args: string[]): Promise<void> {
   });
 }
 
-export function startUpdate(client: Client): void {
+// `rebuild` installs and builds even without new commits (e.g. after a manual git pull or a failed build).
+export function startUpdate(client: Client, options: { rebuild?: boolean } = {}): void {
   if (state.running) throw new Error('An update is already running.');
   if (!state.gitAvailable) throw new Error(state.checkError ?? 'git is not available.');
 
@@ -174,32 +179,37 @@ export function startUpdate(client: Client): void {
       await run('git', ['merge', '--ff-only', '@{u}']);
       const after = await git(['rev-parse', 'HEAD']);
 
-      if (before === after) {
+      const install = before !== after || !!options.rebuild;
+      if (!install) {
         addLog('Already up to date.');
       } else {
-        const changed = (await git(['diff', '--name-only', before, after])).split('\n');
-        if (changed.some(file => file === 'package.json' || file === 'package-lock.json')) {
-          state.step = 'Installing dependencies';
-          await run('npm', ['install', '--no-audit', '--no-fund']);
-        } else {
-          addLog('Dependencies unchanged, skipping npm install.');
-        }
+        // Always, not only when package.json changed: a missing package (after a manual pull,
+        // or devDependencies removed by an earlier production install) breaks the build otherwise.
+        state.step = 'Installing dependencies';
+        await run('npm', ['install', '--include=dev', '--no-audit', '--no-fund']);
+
+        // The build first deletes dist/, so check the code before: a failing check keeps the running version intact.
+        state.step = 'Checking the code';
+        await run('npm', ['run', 'typecheck']);
 
         state.step = 'Building';
         await run('npm', ['run', 'build']);
       }
 
       state.success = true;
-      state.step = before === after ? 'Already up to date' : pm2 ? 'Restarting' : 'Done – restart the bot to finish';
-      addLog(before === after ? 'Nothing to install.' : pm2 ? 'Update installed. Restarting the bot…' : 'Update installed. The bot is not running under pm2: restart it yourself to use the new version.');
+      state.step = !install ? 'Already up to date' : pm2 ? 'Restarting' : 'Done – restart the bot to finish';
+      addLog(!install ? 'Nothing to install.' : pm2 ? 'Installed and built. Restarting the bot…' : 'Installed and built. The bot is not running under pm2: restart it yourself to use the new version.');
       state.commits = [];
       state.behind = 0;
 
-      if (pm2 && before !== after) setTimeout(() => process.exit(0), 1500);
+      if (pm2 && install) setTimeout(() => process.exit(0), 1500);
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const failedStep = state.step;
       state.success = false;
-      addLog(`❌ ${error instanceof Error ? error.message : String(error)}`);
+      addLog(`❌ ${message}`);
       state.step = 'Failed';
+      void client.alerts.send('updates', '❌ The update failed', `The bot keeps running the version it had. It failed while "${failedStep}":\n\`\`\`${message.slice(0, 800)}\`\`\`\nSee Maintenance → Updates in the panel for the full log.`, { key: `update-failed:${Date.now()}`, cooldownMs: 0 });
     } finally {
       state.running = false;
       state.finishedAt = Date.now();

@@ -219,14 +219,15 @@ export const registerCommunityRoutes: RouteRegistrar = (app, ctx) => {
   app.post('/pinboard/boards/:boardId/stats-post/preview', async (request): Promise<EmbedPreviewResponse> => {
     const board = findBoard((request.params as { boardId: string }).boardId);
     const config = statsPostFrom(board, bodyOf(request));
-    const { embed: built, chart } = buildStatsMessage(client, board, config);
-    const embed = built as EmbedData;
+    const { embeds: built, chart } = buildStatsMessage(client, board, config);
+    const embeds = built as EmbedData[];
     // The panel can't load attachment:// URLs, so the preview gets the image inline.
-    if (chart) embed.image = { url: `data:image/png;base64,${chart.toString('base64')}` };
-    const texts = [embed.description, ...(embed.fields ?? []).map(f => f.value)];
+    const withChart = embeds.find(embed => embed.image);
+    if (chart && withChart) withChart.image = { url: `data:image/png;base64,${chart.toString('base64')}` };
+    const texts = embeds.flatMap(embed => [embed.description, ...(embed.fields ?? []).map(f => f.value)]);
     const mentions = await resolveMentions(client, board.guildId, texts);
-    mentions.users = { ...storedAuthorNames(client, board, config.range), ...mentions.users };
-    return { embed, mentions };
+    mentions.users = { ...storedAuthorNames(client, board, config), ...mentions.users };
+    return { embeds, mentions };
   });
 
   app.put('/pinboard/boards/:boardId/stats-post', async (request): Promise<PinboardStatsPost> => {

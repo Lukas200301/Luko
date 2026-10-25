@@ -47,7 +47,8 @@ function newBoard(): PinboardBoard {
     emojis: [],
     ignoredChannelIds: [],
     ignoreSelfReactions: false,
-    ignoreBotMessages: false
+    ignoreBotMessages: false,
+    ignorePinboardPosts: false
   };
 }
 
@@ -63,7 +64,8 @@ function toBoard(status: PinboardBoardStatus | PinboardBoard): PinboardBoard {
     emojis: status.emojis,
     ignoredChannelIds: status.ignoredChannelIds,
     ignoreSelfReactions: status.ignoreSelfReactions,
-    ignoreBotMessages: status.ignoreBotMessages
+    ignoreBotMessages: status.ignoreBotMessages,
+    ignorePinboardPosts: status.ignorePinboardPosts
   };
 }
 
@@ -220,6 +222,9 @@ function BoardEditor({ status, isNew, onSave, onDelete, saving }: {
               </SettingRow>
               <SettingRow title="Ignore messages from bots">
                 <Switch checked={board.ignoreBotMessages} onChange={(ignoreBotMessages) => set({ ignoreBotMessages })} label="Ignore bot messages" />
+              </SettingRow>
+              <SettingRow title="Ignore pinboard posts" description="Posts of a pinboard (an old pinboard channel or another board) can't be pinned again. This board's own posts never are.">
+                <Switch checked={board.ignorePinboardPosts} onChange={(ignorePinboardPosts) => set({ ignorePinboardPosts })} label="Ignore pinboard posts" />
               </SettingRow>
             </div>
           </div>

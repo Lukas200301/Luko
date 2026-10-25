@@ -311,7 +311,8 @@ export class PinboardManager {
 
   // ---------- Statistics ----------
 
-  public stats(boardId: string, range: PinboardRange): Omit<PinboardStats, 'channels' | 'backfill' | 'mentions'> & { channels: { channelId: string; pins: number; reactions: number }[] } {
+  // `listLimit` raises the length of the ranked lists (authors, channels, emojis, top pins) for statistics posts.
+  public stats(boardId: string, range: PinboardRange, listLimit = 10): Omit<PinboardStats, 'channels' | 'backfill' | 'mentions'> & { channels: { channelId: string; pins: number; reactions: number }[] } {
     const since = rangeStart(range);
     const inRange = since === null ? '' : 'AND p.pinned_at >= ?';
     const params: SQLInputValue[] = since === null ? [boardId] : [boardId, since];
@@ -327,7 +328,7 @@ export class PinboardManager {
       SELECT r.emoji AS emoji, MAX(r.display) AS display, COUNT(*) AS pins, SUM(r.count) AS reactions
       FROM pinboard_reactions r JOIN pinboard p ON p.board_id = r.board_id AND p.original_message_id = r.original_message_id
       WHERE p.board_id = ? ${inRange}
-      GROUP BY r.emoji ORDER BY reactions DESC LIMIT 20
+      GROUP BY r.emoji ORDER BY reactions DESC LIMIT ${Math.max(20, listLimit)}
     `).all(...params) as PinboardStats['emojis'];
 
     const authors = db.prepare(`
@@ -335,18 +336,18 @@ export class PinboardManager {
         COUNT(*) AS pins, COALESCE(SUM(p.count), 0) AS reactions
       FROM pinboard p
       WHERE p.board_id = ? ${inRange} AND p.author_name IS NOT NULL AND p.author_name != 'Unknown author'
-      GROUP BY key ORDER BY pins DESC, reactions DESC LIMIT 10
+      GROUP BY key ORDER BY pins DESC, reactions DESC LIMIT ${listLimit}
     `).all(...params) as PinboardStats['authors'];
 
     const channels = db.prepare(`
       SELECT p.channel_id AS channelId, COUNT(*) AS pins, COALESCE(SUM(p.count), 0) AS reactions
       FROM pinboard p WHERE p.board_id = ? ${inRange} AND p.channel_id IS NOT NULL
-      GROUP BY p.channel_id ORDER BY pins DESC LIMIT 10
+      GROUP BY p.channel_id ORDER BY pins DESC LIMIT ${listLimit}
     `).all(...params) as { channelId: string; pins: number; reactions: number }[];
 
     const top = (db.prepare(`
       SELECT p.* FROM pinboard p WHERE p.board_id = ? ${inRange} AND p.count IS NOT NULL
-      ORDER BY p.count DESC, p.pinned_at DESC LIMIT 10
+      ORDER BY p.count DESC, p.pinned_at DESC LIMIT ${listLimit}
     `).all(...params) as unknown as PinboardRow[]).map(toEntry);
 
     const points = db.prepare(`

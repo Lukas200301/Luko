@@ -63,29 +63,66 @@ function bestReaction(board: PinboardBoard, counted: QualifyingReaction[]): Qual
   return best;
 }
 
-// Pinboard channels (of any board) and the board's ignored channels.
+// The board's own channel (it would repost its own posts), other boards' channels when pinboard posts
+// are ignored, and the board's ignored channels.
 function isIgnoredChannel(board: PinboardBoard, boards: PinboardBoard[], message: Message): boolean {
-  if (boards.some(b => b.channelId === message.channelId)) return true;
+  if (message.channelId === board.channelId) return true;
+  if (board.ignorePinboardPosts && boards.some(b => b.channelId === message.channelId)) return true;
   const parentId = message.channel.isThread() ? message.channel.parentId : null;
   return board.ignoredChannelIds.includes(message.channelId) || (!!parentId && board.ignoredChannelIds.includes(parentId));
 }
 
 // A pinboard post written by this or another Luko bot, also in an old pinboard channel.
-// Pinning those again only copies the header ("⭐ **5** #channel") and loses the real message.
 export function isPinboardPost(message: Message): boolean {
   return !!message.author?.bot
     && /\*\*\d+\*\*\s*<#\d+>/.test(message.content)
     && !!message.embeds[0]?.description?.startsWith('**[Jump to message!](');
 }
 
-function buildEmbed(message: Message): { embed: EmbedBuilder; imageUrl: string | null } {
+// Room for the pinned text in the pinboard post's embed (its description holds at most 4096 characters).
+const PIN_TEXT_LIMIT = 3800;
+
+// The text of a bot's embeds (title, description, fields): bots often write nothing else.
+function embedText(message: Message): string {
+  return message.embeds
+    .map(e => [e.title ? `**${e.title}**` : '', e.description ?? '', ...e.fields.map(f => `**${f.name}**\n${f.value}`)].filter(Boolean).join('\n'))
+    .filter(Boolean)
+    .join('\n\n');
+}
+
+interface PinSource {
+  authorId?: string;
+  authorName: string;
+  authorAvatarUrl?: string;
+  text: string;
+}
+
+// Who and what a pin shows. A pinned pinboard post shows the message inside it (author and text from
+// its embed) instead of its "⭐ **5** #channel" header; a bot message also shows its embeds' text.
+export function pinSource(message: Message): PinSource {
+  if (isPinboardPost(message)) {
+    const embed = message.embeds[0];
+    const iconURL = embed.author?.iconURL ?? undefined;
+    return {
+      authorId: iconURL ? /\/avatars\/(\d+)\//.exec(iconURL)?.[1] : undefined,
+      authorName: embed.author?.name ?? 'Unknown User',
+      authorAvatarUrl: iconURL,
+      text: (embed.description ?? '').replace(/^\*\*\[Jump to message!\]\([^)]*\)\*\*\s*/, '').slice(0, PIN_TEXT_LIMIT)
+    };
+  }
+  return {
+    authorId: message.author?.id,
+    authorName: message.author?.displayName || message.author?.tag || 'Unknown User',
+    authorAvatarUrl: message.author?.displayAvatarURL() || undefined,
+    text: [message.content, message.author?.bot ? embedText(message) : ''].filter(Boolean).join('\n\n').slice(0, PIN_TEXT_LIMIT)
+  };
+}
+
+function buildEmbed(message: Message, source: PinSource): { embed: EmbedBuilder; imageUrl: string | null } {
   const embed = new EmbedBuilder()
     .setColor(0xFEEA3B)
-    .setAuthor({
-      name: message.author?.displayName || message.author?.tag || 'Unknown User',
-      iconURL: message.author?.displayAvatarURL() || undefined
-    })
-    .setDescription(`**[Jump to message!](${message.url})**\n\n${message.content || ''}`)
+    .setAuthor({ name: source.authorName.slice(0, 256), iconURL: source.authorAvatarUrl })
+    .setDescription(`**[Jump to message!](${message.url})**\n\n${source.text}`)
     .setFooter({ text: `#${'name' in message.channel ? message.channel.name : 'unknown'}` })
     // Discord shows this in each reader's own time zone ("Today at …", "Yesterday at …", or the date).
     .setTimestamp(message.createdAt);
@@ -120,7 +157,8 @@ function displayEmoji(best: QualifyingReaction): string {
 
 // Creates, updates or removes the post for one message on one board.
 async function updateBoard(client: Client, board: PinboardBoard, boards: PinboardBoard[], message: Message): Promise<void> {
-  if (isIgnoredChannel(board, boards, message) || isPinboardPost(message)) return;
+  if (isIgnoredChannel(board, boards, message)) return;
+  if (board.ignorePinboardPosts && isPinboardPost(message)) return;
   if (board.ignoreBotMessages && message.author?.bot) return;
 
   const targetChannel = await client.channels.fetch(board.channelId).catch(() => null);
@@ -138,15 +176,16 @@ async function updateBoard(client: Client, board: PinboardBoard, boards: Pinboar
     return;
   }
 
-  const { embed, imageUrl } = buildEmbed(message);
+  const source = pinSource(message);
+  const { embed, imageUrl } = buildEmbed(message, source);
   const topText = `${displayEmoji(best)} **${best.count}** <#${message.channel.id}>`;
   const metadata = {
     channelId: message.channel.id,
-    authorId: message.author?.id,
-    authorName: message.author?.displayName || message.author?.tag || 'Unknown User',
-    authorAvatarUrl: message.author?.displayAvatarURL() || undefined,
-    excerpt: (message.content || '').slice(0, 300),
-    content: message.content || '',
+    authorId: source.authorId,
+    authorName: source.authorName,
+    authorAvatarUrl: source.authorAvatarUrl,
+    excerpt: source.text.slice(0, 300),
+    content: source.text,
     imageUrl: imageUrl || undefined,
     count: best.count,
     emoji: emojiKey(best.reaction) ?? undefined,

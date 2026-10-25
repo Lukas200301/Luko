@@ -105,7 +105,8 @@ const sanitizers: { [K in SettingsSection]?: Sanitizer<K> } = {
         emojis,
         ignoredChannelIds: strList(board.ignoredChannelIds, 100).filter(isSnowflake),
         ignoreSelfReactions: bool(board.ignoreSelfReactions, false),
-        ignoreBotMessages: bool(board.ignoreBotMessages, false)
+        ignoreBotMessages: bool(board.ignoreBotMessages, false),
+        ignorePinboardPosts: bool(board.ignorePinboardPosts, false)
       }];
     });
 

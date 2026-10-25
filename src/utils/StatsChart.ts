@@ -1,5 +1,5 @@
 import * as path from 'node:path';
-import { Resvg } from '@resvg/resvg-js';
+import type { Resvg as ResvgClass } from '@resvg/resvg-js';
 
 // Bar charts as PNG images for embeds (Discord can't show SVG). Drawn as SVG and rendered with
 // resvg, using the Inter font shipped in assets/fonts, so it looks the same on every system.
@@ -11,6 +11,22 @@ const WIDTH = 1000;
 const HEIGHT = 380;
 const PAD = { top: 84, right: 28, bottom: 52, left: 64 };
 const COLORS = { background: '#2b2d31', grid: '#3f4147', text: '#f2f3f5', muted: '#b5bac1' };
+
+// Loaded on first use: if the package (or its build for this system) is missing,
+// statistics posts go out without a chart instead of the bot failing to start.
+let Resvg: typeof ResvgClass | null | undefined;
+
+function loadResvg(): typeof ResvgClass | null {
+  if (Resvg === undefined) {
+    try {
+      Resvg = (require('@resvg/resvg-js') as typeof import('@resvg/resvg-js')).Resvg;
+    } catch (error) {
+      Resvg = null;
+      console.warn('⚠️ Charts are unavailable because @resvg/resvg-js could not be loaded. Run npm install (or "Reinstall & rebuild" in the panel).', error instanceof Error ? error.message : error);
+    }
+  }
+  return Resvg;
+}
 
 export interface ChartPoint {
   label: string;
@@ -30,7 +46,10 @@ function niceMax(max: number): number {
   return nice * 4;
 }
 
-export function renderBarChart(points: ChartPoint[], options: { title: string; subtitle: string; color: string }): Buffer {
+// The chart as PNG, or null when the renderer isn't available.
+export function renderBarChart(points: ChartPoint[], options: { title: string; subtitle: string; color: string }): Buffer | null {
+  const Renderer = loadResvg();
+  if (!Renderer) return null;
   const plotWidth = WIDTH - PAD.left - PAD.right;
   const plotHeight = HEIGHT - PAD.top - PAD.bottom;
   const max = niceMax(Math.max(0, ...points.map(p => p.value)));
@@ -76,5 +95,5 @@ export function renderBarChart(points: ChartPoint[], options: { title: string; s
   });
 
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${HEIGHT}" viewBox="0 0 ${WIDTH} ${HEIGHT}" font-family="Inter">${parts.join('')}</svg>`;
-  return new Resvg(svg, { font: { fontFiles: FONTS, loadSystemFonts: false, defaultFontFamily: 'Inter' } }).render().asPng();
+  return new Renderer(svg, { font: { fontFiles: FONTS, loadSystemFonts: false, defaultFontFamily: 'Inter' } }).render().asPng();
 }

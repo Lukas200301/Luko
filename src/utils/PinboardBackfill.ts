@@ -1,7 +1,7 @@
 import { Client, Embed, Message } from 'discord.js';
 import { PinboardBoard, PinboardEntry } from '../shared/types';
 import { PinboardMetadata, POST_HEADER } from './PinboardManager';
-import { isPinboardPost } from './PinboardService';
+import { isPinboardPost, pinSource } from './PinboardService';
 
 // Pins made by older versions only stored IDs (or a short preview). This reads each pinboard post
 // back once and stores the full message, so the panel never has to ask Discord for it again.
@@ -122,6 +122,26 @@ type RepairResult = 'repaired' | 'duplicate' | 'kept' | 'retry';
 // A pin whose "message" is itself a pinboard post: follow the post's jump link to the real message
 // and store that one instead. The board's Discord post stays; it updates itself on the next reaction.
 async function unwrapRepost(client: Client, board: PinboardBoard, entry: PinboardEntry): Promise<RepairResult> {
+  // Boards that allow pinning pinboard posts keep the pin on the post people reacted to (moving it
+  // would make the next reaction post it again); it only gets the author and text shown in the post.
+  if (!board.ignorePinboardPosts) {
+    if (!entry.channelId) return 'kept';
+    const { message, permanent } = await fetchMessage(client, entry.channelId, entry.originalMessageId);
+    if (!message) return permanent ? 'kept' : 'retry';
+    if (!isPinboardPost(message)) return 'kept';
+    const source = pinSource(message);
+    client.pinboardManager.moveEntry(board.id, entry.originalMessageId, entry.originalMessageId, {
+      channelId: entry.channelId,
+      authorId: source.authorId,
+      authorName: source.authorName,
+      authorAvatarUrl: source.authorAvatarUrl,
+      content: source.text,
+      excerpt: source.text.slice(0, 300),
+      imageUrl: entry.imageUrl
+    });
+    return 'repaired';
+  }
+
   let target: PostedMessage | null = null;
   let channelId = entry.channelId;
   let messageId = entry.originalMessageId;

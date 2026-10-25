@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowDownToLine, BellRing, CheckCircle2, Database, Download, GitCommitHorizontal, History, RefreshCw, RotateCcw, Save, Send, Trash2 } from 'lucide-react';
+import { ArrowDownToLine, BellRing, Hammer, CheckCircle2, Database, Download, GitCommitHorizontal, History, RefreshCw, RotateCcw, Save, Send, Trash2 } from 'lucide-react';
 import { api } from '../lib/api';
 import { useSaveSettings, useSettings } from '../lib/settings';
 import { cn, formatBytes, formatDateTime, timeAgo } from '../lib/utils';
@@ -53,7 +53,7 @@ function UpdatesCard({ isOwner }: { isOwner: boolean }) {
   });
 
   const install = useMutation({
-    mutationFn: () => api.post<UpdateStatus>('/api/updates/install'),
+    mutationFn: (rebuild: boolean) => api.post<UpdateStatus>('/api/updates/install', { rebuild }),
     onSuccess: (data) => queryClient.setQueryData(['updates'], data),
     onError: (error) => toast.error(error)
   });
@@ -71,7 +71,15 @@ function UpdatesCard({ isOwner }: { isOwner: boolean }) {
         ? 'The bot downloads the update, builds it and restarts. Music stops for a moment. The database is backed up first.'
         : 'The bot downloads and builds the update. It is not running under pm2, so you have to restart it yourself afterwards. The database is backed up first.',
       confirmLabel: 'Update now'
-    })) install.mutate();
+    })) install.mutate(false);
+  };
+
+  const startRebuild = async () => {
+    if (await confirm({
+      title: 'Reinstall and rebuild?',
+      description: `Runs npm install and the build for the installed version${status.pm2 ? ', then restarts the bot' : ''}. Use this after pulling by hand, or when the bot doesn't build.`,
+      confirmLabel: 'Reinstall & rebuild'
+    })) install.mutate(true);
   };
 
   const showLog = status.running || status.log.length > 0;
@@ -118,7 +126,7 @@ function UpdatesCard({ isOwner }: { isOwner: boolean }) {
                 <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
                   <span className="text-sm font-medium">{status.behind} new {status.behind === 1 ? 'update' : 'updates'} on GitHub</span>
                   {isOwner
-                    ? <Button onClick={startInstall} loading={install.isPending} disabled={status.running}><Download className="size-4" />Install update</Button>
+                    ? <Button onClick={startInstall} loading={install.isPending && !install.variables} disabled={status.running}><Download className="size-4" />Install update</Button>
                     : <span className="text-xs text-muted">Only the owner can install updates</span>}
                 </div>
                 <div className="max-h-56 divide-y divide-border overflow-y-auto border-t border-accent/20">
@@ -134,6 +142,13 @@ function UpdatesCard({ isOwner }: { isOwner: boolean }) {
             ) : !status.running && !status.checkError && (status.checkedAt
               ? <div className="flex items-center gap-2 text-sm text-success"><CheckCircle2 className="size-4" />The bot is up to date.</div>
               : <p className="text-sm text-muted">Click <b>Check now</b> to look for updates on GitHub.</p>)}
+
+            {isOwner && !status.running && (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border px-4 py-3 text-sm">
+                <span className="text-muted">Pulled by hand, or the last build failed? Install the packages and build the installed version again.</span>
+                <Button variant="outline" size="sm" onClick={startRebuild} loading={install.isPending && install.variables === true}><Hammer className="size-3.5" />Reinstall & rebuild</Button>
+              </div>
+            )}
 
             {showLog && (
               <div className="space-y-2">
